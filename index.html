@@ -1190,9 +1190,19 @@
                         </div>
                         <div class="form-group" id="grupoProveedor" style="display:none;">
                             <label id="labelProveedor">Proveedor</label>
-                            <select id="movProveedor">
+                            <select id="movProveedor" onchange="alCambiarSelectProveedor('mov')">
                                 <option value="">Seleccionar...</option>
                             </select>
+                            <!-- Alta rápida de proveedor sin salir del formulario.
+                                 Se muestra al elegir la opción "Agregar proveedor nuevo". -->
+                            <div id="movNuevoProveedorBox" style="display:none;margin-top:6px;">
+                                <input type="text" id="movNuevoProveedor" maxlength="100" placeholder="Nombre del proveedor"
+                                       style="width:100%;margin-bottom:6px;" autocomplete="off">
+                                <div style="display:flex;gap:6px;">
+                                    <button type="button" class="btn btn-sm btn-primary" onclick="guardarProveedorInline('mov')">✓ Guardar</button>
+                                    <button type="button" class="btn btn-sm btn-secondary" onclick="cancelarProveedorInline('mov')">✕ Cancelar</button>
+                                </div>
+                            </div>
                         </div>
                         <div class="form-group" id="grupoReservaAporte" style="display:none;">
                             <label id="labelReservaAporte">Reserva destino *</label>
@@ -1912,9 +1922,19 @@
                     </div>
                     <div class="form-group" id="editGrupoProveedor" style="display:none;">
                         <label id="editLabelProveedor">Proveedor *</label>
-                        <select id="editProveedor">
+                        <select id="editProveedor" onchange="alCambiarSelectProveedor('edit')">
                             <option value="">Seleccionar...</option>
                         </select>
+                        <!-- Alta rápida de proveedor sin salir del modal de edición.
+                             Se usa un input inline y no otro modal, para no anidar modales. -->
+                        <div id="editNuevoProveedorBox" style="display:none;margin-top:6px;">
+                            <input type="text" id="editNuevoProveedor" maxlength="100" placeholder="Nombre del proveedor"
+                                   style="width:100%;margin-bottom:6px;" autocomplete="off">
+                            <div style="display:flex;gap:6px;">
+                                <button type="button" class="btn btn-sm btn-primary" onclick="guardarProveedorInline('edit')">✓ Guardar</button>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="cancelarProveedorInline('edit')">✕ Cancelar</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="form-group" id="editGrupoReservaAporte" style="display:none;">
                         <label>Reserva destino *</label>
@@ -2187,6 +2207,25 @@
 
             // Formulario editar
             document.getElementById('formEditar').addEventListener('submit', guardarEdicion);
+
+            // Alta rápida de proveedor: los inputs viven DENTRO de los <form>, así que
+            // Enter dispararía el submit y registraría el movimiento a medio cargar.
+            // Se intercepta: Enter guarda el proveedor, Escape cancela.
+            ['mov', 'edit'].forEach(prefijo => {
+                const input = document.getElementById(prefijo + 'NuevoProveedor');
+                if (!input) return;
+                input.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        guardarProveedorInline(prefijo);
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        cancelarProveedorInline(prefijo);
+                    }
+                });
+            });
         }
 
         function cambiarSeccion(seccion) {
@@ -2828,6 +2867,13 @@
                 // Si el concepto es "Depósito", proveedor obligatorio
                 if (conceptoEsDeposito(concepto)) {
                     const proveedorId = document.getElementById('movProveedor').value;
+                    // El centinela del alta rápida es truthy: hay que rechazarlo explícitamente,
+                    // si no se enviaría parseInt('__nuevo__') = NaN al backend.
+                    if (proveedorId === PROVEEDOR_NUEVO) {
+                        mostrarToast('Terminá de cargar el proveedor nuevo (o cancelá) antes de registrar', 'error');
+                        document.getElementById('movNuevoProveedor').focus();
+                        return;
+                    }
                     if (!proveedorId) {
                         mostrarToast('Debe seleccionar un proveedor para el depósito', 'error');
                         return;
@@ -3064,7 +3110,13 @@
                     datos.proveedores.forEach(p => {
                         select.innerHTML += `<option value="${p.id}">${p.nombre}</option>`;
                     });
-                    select.value = valorActual;
+                    // Alta rápida: sólo en los formularios de carga/edición.
+                    // En los selects de filtro (egr/rep) no tiene sentido crear proveedores.
+                    if (id === 'movProveedor' || id === 'editProveedor') {
+                        select.innerHTML += `<option value="${PROVEEDOR_NUEVO}">➕ Agregar proveedor nuevo...</option>`;
+                    }
+                    // No restaurar el valor centinela: no es un proveedor real.
+                    select.value = (valorActual === PROVEEDOR_NUEVO) ? '' : valorActual;
                 }
             });
 
@@ -3762,6 +3814,103 @@
         }
 
         // ==================== PROVEEDORES ====================
+        // ==================== ALTA RÁPIDA DE PROVEEDOR (desde el formulario) ====================
+        // Valor centinela de la opción "➕ Agregar proveedor nuevo..." dentro del select.
+        // No puede colisionar con un id real porque los ids son numéricos.
+        const PROVEEDOR_NUEVO = '__nuevo__';
+
+        // Último proveedor elegido antes de abrir el alta rápida, para poder volver atrás
+        // si el usuario cancela (si no, el select quedaría en "Agregar nuevo...").
+        const proveedorPrevio = { mov: '', edit: '' };
+
+        function alCambiarSelectProveedor(prefijo) {
+            const select = document.getElementById(prefijo + 'Proveedor');
+            const box = document.getElementById(prefijo + 'NuevoProveedorBox');
+            if (!select || !box) return;
+
+            if (select.value === PROVEEDOR_NUEVO) {
+                box.style.display = 'block';
+                const input = document.getElementById(prefijo + 'NuevoProveedor');
+                input.value = '';
+                input.focus();
+            } else {
+                // Selección normal: recordarla y cerrar el alta rápida si estaba abierta.
+                proveedorPrevio[prefijo] = select.value;
+                box.style.display = 'none';
+            }
+            // NO se llama a actualizarRequiereProveedor() acá: esa función depende del
+            // CONCEPTO, no del proveedor, y su rama `if (!requiere) select.value = ''`
+            // podría borrar justo el proveedor que se acaba de elegir.
+        }
+
+        function cancelarProveedorInline(prefijo) {
+            document.getElementById(prefijo + 'NuevoProveedorBox').style.display = 'none';
+            document.getElementById(prefijo + 'NuevoProveedor').value = '';
+            // Volver a la selección que había antes de abrir el alta rápida
+            document.getElementById(prefijo + 'Proveedor').value = proveedorPrevio[prefijo] || '';
+        }
+
+        /**
+         * Crea el proveedor y lo deja seleccionado en el formulario, sin recargar
+         * ni salir a Configuración. Queda persistido en la tabla `proveedores`,
+         * así que después aparece en todos los selects y filtros.
+         */
+        async function guardarProveedorInline(prefijo) {
+            const input = document.getElementById(prefijo + 'NuevoProveedor');
+            const nombre = input.value.trim();
+
+            if (!nombre) {
+                mostrarToast('Escribí el nombre del proveedor', 'error');
+                input.focus();
+                return;
+            }
+
+            // Atajo: si ya existe (ignorando mayúsculas y espacios), se usa el existente
+            // en vez de mandar un alta que el servidor va a rechazar por duplicado.
+            const yaExiste = datos.proveedores.find(
+                p => p.nombre.trim().toLowerCase() === nombre.toLowerCase()
+            );
+            if (yaExiste) {
+                seleccionarProveedorNuevo(prefijo, yaExiste.id);
+                mostrarToast(`"${yaExiste.nombre}" ya existía, quedó seleccionado`, 'info');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}?action=proveedores`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nombre })
+                });
+                const result = await response.json();
+
+                if (!result.success) {
+                    mostrarToast(result.error || 'Error al agregar proveedor', 'error');
+                    return;
+                }
+
+                // Reflejar el alta en memoria y en TODOS los selects (incluidos los filtros)
+                datos.proveedores.push({ id: result.id, nombre });
+                datos.proveedores.sort((a, b) => a.nombre.localeCompare(b.nombre));
+                seleccionarProveedorNuevo(prefijo, result.id);
+                actualizarListaConfiguracion();
+                mostrarToast(`Proveedor "${nombre}" agregado`, 'success');
+            } catch (error) {
+                console.error('Error agregando proveedor:', error);
+                mostrarToast('Error de conexión', 'error');
+            }
+        }
+
+        // Refresca los selects y deja el proveedor recién creado elegido en el formulario
+        function seleccionarProveedorNuevo(prefijo, id) {
+            actualizarSelects();
+            const select = document.getElementById(prefijo + 'Proveedor');
+            select.value = id;
+            proveedorPrevio[prefijo] = String(id);
+            document.getElementById(prefijo + 'NuevoProveedorBox').style.display = 'none';
+            document.getElementById(prefijo + 'NuevoProveedor').value = '';
+        }
+
         async function agregarProveedor() {
             const input = document.getElementById('nuevoProveedor');
             const nombre = input.value.trim();
@@ -5238,6 +5387,13 @@
                 // Proveedor (hardcoded para concepto "Depósito")
                 if (conceptoEsDeposito(concepto)) {
                     const proveedorId = document.getElementById('editProveedor').value;
+                    // El centinela del alta rápida es truthy: hay que rechazarlo explícitamente,
+                    // si no se enviaría parseInt('__nuevo__') = NaN al backend.
+                    if (proveedorId === PROVEEDOR_NUEVO) {
+                        mostrarToast('Terminá de cargar el proveedor nuevo (o cancelá) antes de guardar', 'error');
+                        document.getElementById('editNuevoProveedor').focus();
+                        return;
+                    }
                     if (!proveedorId) {
                         mostrarToast('Debe seleccionar un proveedor para el depósito', 'error');
                         return;
