@@ -1,0 +1,34 @@
+# ---------------------------------------------------------------
+# Backups y copias viejas
+# NO subir: este repo se despliega a public_html/efectivo, asi que
+# cualquier archivo aca queda descargable desde el sitio publico
+# (ej. efectivo.saboryaroma.com/BACKUP.zip). Ademas son copias
+# historicas que no aportan nada al deploy.
+# ---------------------------------------------------------------
+*.zip
+*.tar
+*.tar.gz
+*.sql
+*.sql.gz
+*.bak
+
+# Archivos temporales de herramientas
+tmpclaude-*
+.claude/
+
+# Sistema operativo
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*~
+
+# Logs
+*.log
+error_log

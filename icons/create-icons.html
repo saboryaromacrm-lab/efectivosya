@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generador de Iconos PWA - Caja SYA</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: #1a4d2e; }
+        .icon-preview { display: inline-block; margin: 10px; text-align: center; }
+        .icon-preview canvas { border: 1px solid #ddd; background: white; }
+        .icon-preview p { font-size: 12px; color: #666; }
+        button { background: #1a4d2e; color: white; border: none; padding: 15px 30px; font-size: 16px; cursor: pointer; border-radius: 8px; margin: 20px 0; }
+        button:hover { background: #2d6a4f; }
+        .instructions { background: white; padding: 20px; border-radius: 8px; margin-top: 20px; }
+        .instructions ol { margin-left: 20px; }
+        .instructions li { margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Generador de Iconos PWA - Caja SYA</h1>
+        <p>Esta herramienta genera los iconos necesarios para la PWA.</p>
+
+        <button onclick="generateAllIcons()">Generar y Descargar Todos los Iconos</button>
+
+        <div id="previews"></div>
+
+        <div class="instructions">
+            <h3>Instrucciones:</h3>
+            <ol>
+                <li>Haz clic en "Generar y Descargar Todos los Iconos"</li>
+                <li>Se descargarán automáticamente todos los iconos necesarios</li>
+                <li>Mueve los archivos descargados a la carpeta <code>icons/</code> de tu aplicación</li>
+                <li>Sube los archivos al servidor junto con el resto de la app</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        const sizes = [16, 32, 72, 96, 114, 120, 128, 144, 152, 180, 192, 384, 512];
+
+        function drawIcon(ctx, size) {
+            // Fondo con gradiente
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, '#1a4d2e');
+            gradient.addColorStop(1, '#2d6a4f');
+
+            // Dibujar fondo redondeado
+            const radius = size * 0.15;
+            ctx.beginPath();
+            ctx.moveTo(radius, 0);
+            ctx.lineTo(size - radius, 0);
+            ctx.quadraticCurveTo(size, 0, size, radius);
+            ctx.lineTo(size, size - radius);
+            ctx.quadraticCurveTo(size, size, size - radius, size);
+            ctx.lineTo(radius, size);
+            ctx.quadraticCurveTo(0, size, 0, size - radius);
+            ctx.lineTo(0, radius);
+            ctx.quadraticCurveTo(0, 0, radius, 0);
+            ctx.closePath();
+            ctx.fillStyle = gradient;
+            ctx.fill();
+
+            // Billete blanco
+            const billeteX = size * 0.15;
+            const billeteY = size * 0.28;
+            const billeteW = size * 0.7;
+            const billeteH = size * 0.38;
+            const billeteRadius = size * 0.04;
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.beginPath();
+            ctx.moveTo(billeteX + billeteRadius, billeteY);
+            ctx.lineTo(billeteX + billeteW - billeteRadius, billeteY);
+            ctx.quadraticCurveTo(billeteX + billeteW, billeteY, billeteX + billeteW, billeteY + billeteRadius);
+            ctx.lineTo(billeteX + billeteW, billeteY + billeteH - billeteRadius);
+            ctx.quadraticCurveTo(billeteX + billeteW, billeteY + billeteH, billeteX + billeteW - billeteRadius, billeteY + billeteH);
+            ctx.lineTo(billeteX + billeteRadius, billeteY + billeteH);
+            ctx.quadraticCurveTo(billeteX, billeteY + billeteH, billeteX, billeteY + billeteH - billeteRadius);
+            ctx.lineTo(billeteX, billeteY + billeteRadius);
+            ctx.quadraticCurveTo(billeteX, billeteY, billeteX + billeteRadius, billeteY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Símbolo $
+            ctx.fillStyle = '#1a4d2e';
+            ctx.font = `bold ${size * 0.25}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('$', size / 2, size * 0.47);
+
+            // Círculos decorativos
+            ctx.strokeStyle = '#1a4d2e';
+            ctx.lineWidth = size * 0.008;
+
+            ctx.beginPath();
+            ctx.arc(size * 0.27, size * 0.47, size * 0.05, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(size * 0.73, size * 0.47, size * 0.05, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Texto SYA
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${size * 0.1}px Arial`;
+            ctx.fillText('SYA', size / 2, size * 0.82);
+        }
+
+        function createIcon(size) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            drawIcon(ctx, size);
+            return canvas;
+        }
+
+        function downloadIcon(canvas, size) {
+            const link = document.createElement('a');
+            link.download = `icon-${size}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        function generateAllIcons() {
+            const previews = document.getElementById('previews');
+            previews.innerHTML = '<h3>Iconos generados:</h3>';
+
+            sizes.forEach((size, index) => {
+                setTimeout(() => {
+                    const canvas = createIcon(size);
+                    downloadIcon(canvas, size);
+
+                    // Mostrar preview
+                    const div = document.createElement('div');
+                    div.className = 'icon-preview';
+                    div.appendChild(canvas);
+                    const p = document.createElement('p');
+                    p.textContent = `${size}x${size}`;
+                    div.appendChild(p);
+                    previews.appendChild(div);
+                }, index * 200); // Delay para evitar problemas con descargas múltiples
+            });
+        }
+
+        // Mostrar previews al cargar
+        window.onload = function() {
+            const previews = document.getElementById('previews');
+            previews.innerHTML = '<h3>Vista previa de iconos:</h3>';
+
+            [32, 96, 192, 512].forEach(size => {
+                const canvas = createIcon(size);
+                const div = document.createElement('div');
+                div.className = 'icon-preview';
+                div.appendChild(canvas);
+                const p = document.createElement('p');
+                p.textContent = `${size}x${size}`;
+                div.appendChild(p);
+                previews.appendChild(div);
+            });
+        };
+    </script>
+</body>
+</html>

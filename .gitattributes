@@ -1,0 +1,13 @@
+# Normalizar finales de linea: en el repo siempre LF.
+# El servidor de Hostinger es Linux; guardar CRLF puede romper cosas como
+# header() en PHP si el archivo arrastra retornos de carro de Windows.
+* text=auto eol=lf
+
+# Binarios: no tocar
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.pdf binary

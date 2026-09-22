@@ -1,0 +1,82 @@
+{
+  "name": "Caja SYA - Sistema de Efectivo",
+  "short_name": "Caja SYA",
+  "description": "Sistema de control de caja y movimientos de efectivo",
+  "start_url": "./?acceso=sya2025",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a4d2e",
+  "theme_color": "#1a4d2e",
+  "categories": ["business", "finance"],
+  "icons": [
+    {
+      "src": "icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Registrar Movimiento",
+      "short_name": "Nuevo",
+      "description": "Registrar un nuevo movimiento",
+      "url": "./?acceso=sya2025#movimientos"
+    },
+    {
+      "name": "Ver Ingresos",
+      "short_name": "Ingresos",
+      "description": "Ver reporte de ingresos",
+      "url": "./?acceso=sya2025#ingresos"
+    },
+    {
+      "name": "Ver Egresos",
+      "short_name": "Egresos",
+      "description": "Ver reporte de egresos",
+      "url": "./?acceso=sya2025#egresos"
+    }
+  ]
+}
