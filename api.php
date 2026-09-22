@@ -1047,6 +1047,70 @@ try {
         case 'proveedor':
             $id = $_GET['id'] ?? 0;
 
+            if (!is_numeric($id) || intval($id) <= 0) {
+                jsonResponse(['error' => 'ID de proveedor inválido'], 400);
+            }
+            $id = intval($id);
+
+            if ($method === 'PUT') {
+                // Renombrar un proveedor existente
+                $data = json_decode(file_get_contents('php://input'), true);
+                $nombre = isset($data['nombre']) ? trim($data['nombre']) : '';
+
+                if (empty($nombre)) {
+                    jsonResponse(['error' => 'El nombre no puede estar vacío'], 400);
+                }
+                if (strlen($nombre) > 100) {
+                    jsonResponse(['error' => 'El nombre es demasiado largo (máx 100 caracteres)'], 400);
+                }
+
+                $stmt = $conn->prepare("SELECT nombre FROM proveedores WHERE id = :id AND activo = 1");
+                $stmt->execute([':id' => $id]);
+                $actual = $stmt->fetch();
+                if (!$actual) {
+                    jsonResponse(['error' => 'El proveedor no existe o fue eliminado'], 404);
+                }
+
+                // Que no choque con OTRO proveedor activo
+                $stmt = $conn->prepare("SELECT id FROM proveedores WHERE nombre = :nombre AND activo = 1 AND id <> :id");
+                $stmt->execute([':nombre' => $nombre, ':id' => $id]);
+                if ($stmt->fetch()) {
+                    jsonResponse(['error' => 'Ya existe otro proveedor con ese nombre'], 400);
+                }
+
+                if ($actual['nombre'] === $nombre) {
+                    jsonResponse(['success' => true, 'sinCambios' => true, 'movimientosActualizados' => 0]);
+                }
+
+                try {
+                    $conn->beginTransaction();
+
+                    $conn->prepare("UPDATE proveedores SET nombre = :nombre WHERE id = :id")
+                         ->execute([':nombre' => $nombre, ':id' => $id]);
+
+                    // CRÍTICO: `movimientos` guarda el nombre desnormalizado en
+                    // proveedor_nombre, y `reporte-egresos` agrupa por esa columna.
+                    // Sin propagar el cambio, el mismo proveedor aparecería partido
+                    // en dos filas del reporte (nombre viejo y nombre nuevo).
+                    $stmtMov = $conn->prepare("UPDATE movimientos SET proveedor_nombre = :nombre WHERE proveedor_id = :id");
+                    $stmtMov->execute([':nombre' => $nombre, ':id' => $id]);
+                    $afectados = $stmtMov->rowCount();
+
+                    $conn->commit();
+
+                    jsonResponse([
+                        'success' => true,
+                        'nombreAnterior' => $actual['nombre'],
+                        'movimientosActualizados' => $afectados
+                    ]);
+                } catch (Exception $e) {
+                    if ($conn->inTransaction()) {
+                        $conn->rollBack();
+                    }
+                    throw $e;
+                }
+            }
+
             if ($method === 'DELETE') {
                 $stmt = $conn->prepare("SELECT nombre FROM proveedores WHERE id = :id");
                 $stmt->execute([':id' => $id]);
