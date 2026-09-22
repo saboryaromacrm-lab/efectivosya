@@ -237,6 +237,104 @@
             border-color: var(--verde-medio);
         }
 
+        /* ==================== SELECT CON BUSCADOR ====================
+           Envuelve un <select> nativo sin reemplazarlo: el select queda invisible
+           pero PRESENTE y enfocable (opacity:0, nunca display:none), así siguen
+           funcionando la validación nativa `required` y todo el código existente
+           que lee .value, reescribe .innerHTML o setea .required.
+           El panel se monta en <body> con position:fixed para que no lo recorte
+           el overflow del modal de edición. */
+        .sb-wrap {
+            position: relative;
+            width: 100%;
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .sb-wrap > select {
+            position: absolute;
+            left: 0; top: 0;
+            width: 100%; height: 100%;
+            opacity: 0;
+            pointer-events: none;
+            border: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .sb-boton {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--gris-claro);
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            background: var(--blanco);
+            text-align: left;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: border-color 0.3s;
+        }
+        .sb-boton:hover { border-color: var(--verde-medio); }
+        .sb-wrap.sb-abierto .sb-boton { border-color: var(--verde-medio); }
+        .sb-wrap.sb-invalido .sb-boton { border-color: var(--rojo); }
+
+        .sb-texto {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .sb-texto.sb-placeholder { color: #9aa5a8; }
+        .sb-flecha { flex-shrink: 0; font-size: 0.65rem; color: var(--gris-medio); }
+
+        .sb-panel {
+            position: fixed;
+            z-index: 10000;
+            background: var(--blanco);
+            border: 2px solid var(--verde-medio);
+            border-radius: 8px;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+            overflow: hidden;
+            display: none;
+        }
+        .sb-panel.sb-visible { display: block; }
+
+        .sb-buscar {
+            width: 100%;
+            padding: 11px 12px;
+            border: none;
+            border-bottom: 1px solid var(--gris-claro);
+            font-size: 0.95rem;
+            font-family: inherit;
+            outline: none;
+            box-sizing: border-box;
+        }
+
+        .sb-lista {
+            max-height: 260px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .sb-opcion {
+            padding: 11px 12px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            border-bottom: 1px solid #f2f4f4;
+        }
+        .sb-opcion:last-child { border-bottom: none; }
+        .sb-opcion.sb-activa { background: #eaf4ee; }
+        .sb-opcion.sb-elegida { font-weight: 700; color: var(--verde-oscuro); }
+        .sb-sin-resultados {
+            padding: 14px 12px;
+            color: var(--gris-medio);
+            font-style: italic;
+            font-size: 0.9rem;
+        }
+
         /* Botones */
         .btn {
             padding: 12px 25px;
@@ -2079,6 +2177,9 @@
             window.addEventListener('resize', ajustarEspaciadoHeader);
 
             await cargarDatosIniciales();
+            // Después de cargar los datos, así los desplegables ya tienen sus opciones.
+            // Las que se agreguen o cambien después las detecta el MutationObserver.
+            inicializarSelectsBuscables();
             inicializarEventos();
             setFechaHoy();
             // Inicializar form con tipo ingreso (label + campos de retiro)
@@ -3829,6 +3930,243 @@
         }
 
         // ==================== PROVEEDORES ====================
+        // ==================== SELECT CON BUSCADOR ====================
+        /**
+         * Convierte los <select> en desplegables con buscador, SIN reemplazarlos.
+         *
+         * El <select> nativo sigue siendo la única fuente de verdad: queda en el DOM
+         * (invisible pero enfocable) y todo el código existente sigue funcionando sin
+         * cambios — lee y escribe .value, reescribe .innerHTML, setea .required, etc.
+         * Cuando el usuario elige una opción se escribe select.value y se dispara un
+         * evento 'change', así los onchange ya definidos siguen reaccionando igual.
+         *
+         * Sincronización en ambos sentidos:
+         *  - MutationObserver sobre los hijos: detecta cuando actualizarSelects()
+         *    reescribe las opciones y repinta la lista.
+         *  - MutationObserver sobre el atributo style: replica al wrapper los
+         *    select.style.display = 'none' que hace la lógica de reservas.
+         *  - Se intercepta el setter de .value: asignarlo por código no dispara
+         *    ningún evento, así que sin esto la etiqueta mostraría un valor viejo.
+         */
+
+        // Umbral: por debajo de esta cantidad de opciones no se muestra el buscador
+        // (en listas cortas el campo es ruido, el desplegable ya se lee de un vistazo).
+        const SB_MIN_OPCIONES_BUSCADOR = 8;
+
+        // Quita acentos y pasa a minúsculas, para que "deposito" encuentre "Depósito"
+        function sbNormalizar(texto) {
+            return String(texto || '')
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[̀-ͯ]/g, '');
+        }
+
+        let sbAbierto = null; // wrapper actualmente desplegado (sólo uno a la vez)
+
+        function hacerSelectBuscable(select) {
+            if (!select || select.dataset.sbListo === '1') return;
+            select.dataset.sbListo = '1';
+
+            const wrap = document.createElement('div');
+            wrap.className = 'sb-wrap';
+            select.parentNode.insertBefore(wrap, select);
+            wrap.appendChild(select);
+
+            const boton = document.createElement('button');
+            boton.type = 'button'; // si no, dentro de un <form> actuaría como submit
+            boton.className = 'sb-boton';
+            boton.innerHTML = '<span class="sb-texto"></span><span class="sb-flecha">▼</span>';
+            wrap.appendChild(boton);
+
+            const panel = document.createElement('div');
+            panel.className = 'sb-panel';
+            panel.innerHTML = '<input type="text" class="sb-buscar" placeholder="Buscar..." autocomplete="off"><div class="sb-lista"></div>';
+            document.body.appendChild(panel); // fuera del modal, para que no lo recorte
+
+            const buscar = panel.querySelector('.sb-buscar');
+            const lista = panel.querySelector('.sb-lista');
+
+            const ref = { select, wrap, boton, panel, buscar, lista, indice: -1, opciones: [] };
+            select._sb = ref;
+
+            // --- Etiqueta del botón ---
+            function sincronizarEtiqueta() {
+                const texto = boton.querySelector('.sb-texto');
+                const op = select.options[select.selectedIndex];
+                const etiqueta = op ? op.textContent.trim() : '';
+                const esPlaceholder = !op || op.value === '';
+                texto.textContent = etiqueta || 'Seleccionar...';
+                texto.classList.toggle('sb-placeholder', esPlaceholder);
+                wrap.classList.remove('sb-invalido');
+            }
+            ref.sincronizarEtiqueta = sincronizarEtiqueta;
+
+            // --- Pintar la lista filtrada ---
+            function pintar() {
+                const filtro = sbNormalizar(buscar.value);
+                ref.opciones = Array.from(select.options)
+                    .map((op, i) => ({ i, valor: op.value, texto: op.textContent.trim(), deshabilitada: op.disabled }))
+                    .filter(o => !filtro || sbNormalizar(o.texto).includes(filtro));
+
+                if (!ref.opciones.length) {
+                    lista.innerHTML = '<div class="sb-sin-resultados">Sin resultados</div>';
+                    ref.indice = -1;
+                    return;
+                }
+
+                lista.innerHTML = ref.opciones.map((o, pos) => {
+                    const elegida = o.valor === select.value ? ' sb-elegida' : '';
+                    return `<div class="sb-opcion${elegida}" data-pos="${pos}">${o.texto || '&nbsp;'}</div>`;
+                }).join('');
+
+                // Resaltar la opción ya elegida, o la primera si se está filtrando
+                ref.indice = ref.opciones.findIndex(o => o.valor === select.value);
+                if (ref.indice < 0) ref.indice = 0;
+                marcarActiva(false);
+            }
+
+            function marcarActiva(desplazar = true) {
+                lista.querySelectorAll('.sb-opcion').forEach(el => el.classList.remove('sb-activa'));
+                const el = lista.querySelector(`.sb-opcion[data-pos="${ref.indice}"]`);
+                if (el) {
+                    el.classList.add('sb-activa');
+                    if (desplazar) el.scrollIntoView({ block: 'nearest' });
+                }
+            }
+
+            function elegir(pos) {
+                const o = ref.opciones[pos];
+                if (!o || o.deshabilitada) return;
+                select.value = o.valor;
+                cerrar();
+                // Evento real para que los onchange existentes se enteren del cambio
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            // --- Posicionar el panel (position:fixed respecto del viewport) ---
+            function posicionar() {
+                const r = boton.getBoundingClientRect();
+                panel.style.left = r.left + 'px';
+                panel.style.width = r.width + 'px';
+                const alto = panel.offsetHeight || 300;
+                const espacioAbajo = window.innerHeight - r.bottom;
+                // Si no entra abajo y arriba hay más lugar, se despliega hacia arriba
+                if (espacioAbajo < alto + 8 && r.top > espacioAbajo) {
+                    panel.style.top = Math.max(4, r.top - alto - 4) + 'px';
+                } else {
+                    panel.style.top = (r.bottom + 4) + 'px';
+                }
+            }
+            ref.posicionar = posicionar;
+
+            function abrir() {
+                if (select.disabled) return;
+                if (sbAbierto && sbAbierto !== ref) sbAbierto.cerrar();
+                sbAbierto = ref;
+                wrap.classList.add('sb-abierto');
+                panel.classList.add('sb-visible');
+                // El buscador sólo aparece si la lista es larga
+                buscar.style.display = select.options.length >= SB_MIN_OPCIONES_BUSCADOR ? 'block' : 'none';
+                buscar.value = '';
+                pintar();
+                posicionar();
+                if (buscar.style.display !== 'none') buscar.focus();
+            }
+
+            function cerrar() {
+                wrap.classList.remove('sb-abierto');
+                panel.classList.remove('sb-visible');
+                if (sbAbierto === ref) sbAbierto = null;
+            }
+            ref.cerrar = cerrar;
+            ref.abrir = abrir;
+
+            // --- Eventos ---
+            boton.addEventListener('click', e => {
+                e.preventDefault();
+                e.stopPropagation();
+                wrap.classList.contains('sb-abierto') ? cerrar() : abrir();
+            });
+
+            buscar.addEventListener('input', () => { pintar(); posicionar(); });
+
+            lista.addEventListener('click', e => {
+                const op = e.target.closest('.sb-opcion');
+                if (op) elegir(parseInt(op.dataset.pos));
+            });
+
+            panel.addEventListener('click', e => e.stopPropagation());
+
+            function alTeclear(e) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (!ref.opciones.length) return;
+                    ref.indice = (ref.indice + (e.key === 'ArrowDown' ? 1 : -1) + ref.opciones.length) % ref.opciones.length;
+                    marcarActiva();
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation(); // que no dispare el submit del formulario
+                    elegir(ref.indice);
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    cerrar();
+                    boton.focus();
+                }
+            }
+            buscar.addEventListener('keydown', alTeclear);
+            boton.addEventListener('keydown', e => {
+                if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                    if (!wrap.classList.contains('sb-abierto')) { e.preventDefault(); abrir(); return; }
+                }
+                alTeclear(e);
+            });
+
+            // --- Sincronización desde el select hacia la UI ---
+            new MutationObserver(() => {
+                sincronizarEtiqueta();
+                if (wrap.classList.contains('sb-abierto')) pintar();
+            }).observe(select, { childList: true, subtree: true });
+
+            // Replicar al wrapper los select.style.display = 'none' del código existente
+            new MutationObserver(() => {
+                wrap.style.display = select.style.display === 'none' ? 'none' : '';
+            }).observe(select, { attributes: true, attributeFilter: ['style'] });
+
+            // Asignar .value por código no dispara ningún evento: se intercepta el setter
+            // para que la etiqueta del botón nunca quede mostrando un valor viejo.
+            const descValor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+            Object.defineProperty(select, 'value', {
+                configurable: true,
+                get() { return descValor.get.call(this); },
+                set(v) { descValor.set.call(this, v); sincronizarEtiqueta(); }
+            });
+
+            select.addEventListener('change', sincronizarEtiqueta);
+            sincronizarEtiqueta();
+        }
+
+        function inicializarSelectsBuscables() {
+            document.querySelectorAll('select:not([data-sb-listo])').forEach(hacerSelectBuscable);
+        }
+
+        // Cerrar al hacer click afuera; reposicionar al hacer scroll o cambiar el tamaño.
+        // El scroll se escucha en captura para atrapar también el del modal de edición.
+        document.addEventListener('click', () => { if (sbAbierto) sbAbierto.cerrar(); });
+        window.addEventListener('scroll', () => { if (sbAbierto) sbAbierto.posicionar(); }, true);
+        window.addEventListener('resize', () => { if (sbAbierto) sbAbierto.posicionar(); });
+
+        // Validación nativa: el select está oculto y el navegador no puede enfocarlo,
+        // así que se marca el botón en rojo y se lo enfoca en su lugar.
+        document.addEventListener('invalid', e => {
+            const sb = e.target._sb;
+            if (!sb) return;
+            e.preventDefault();
+            sb.wrap.classList.add('sb-invalido');
+            sb.boton.focus();
+            sb.boton.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }, true);
+
         // ==================== ALTA RÁPIDA DE PROVEEDOR (desde el formulario) ====================
         // Valor centinela de la opción "➕ Agregar proveedor nuevo..." dentro del select.
         // No puede colisionar con un id real porque los ids son numéricos.
