@@ -747,6 +747,24 @@ try {
                 // Si el movimiento ORIGINAL era un GASTO desde reserva, removerlo solo aumenta saldo
                 // (no puede romper nada). No requiere validación.
 
+                // RETIROS DE CAJA VINCULADOS: son parte del mismo cierre de caja que el
+                // ingreso, así que tienen que acompañarlo. Antes, al editar la fecha del
+                // ingreso sus retiros se quedaban en la fecha vieja (y como no se pueden
+                // editar, no había forma de corregirlos): los reportes por día quedaban mal.
+                // Se leen ANTES de actualizar, para saber desde qué fecha recalcular.
+                $stmtHijos = $conn->prepare("SELECT COUNT(*) AS n, MIN(fecha) AS fecha_min FROM movimientos WHERE movimiento_padre_id = :id");
+                $stmtHijos->execute([':id' => $id]);
+                $hijos = $stmtHijos->fetch();
+                $cantHijos = intval($hijos['n'] ?? 0);
+
+                // Un ingreso con retiros no puede pasar a ser egreso: los retiros
+                // quedarían colgando de un egreso, que no tiene caja de donde retirar.
+                if ($cantHijos > 0 && $tipoMov !== 'ingreso') {
+                    jsonResponse([
+                        'error' => "Este ingreso tiene {$cantHijos} retiro(s) de caja vinculado(s) y no se puede convertir en egreso. Eliminá el ingreso y volvé a cargarlo."
+                    ], 400);
+                }
+
                 $stmt = $conn->prepare("
                     UPDATE movimientos SET
                         fecha = :fecha,
@@ -786,11 +804,28 @@ try {
                     ':observacion' => $observacion
                 ]);
 
-                // Recalcular saldos desde la fecha MÁS ANTIGUA entre la original y la nueva:
-                // si la edición movió la fecha hacia atrás, hay que rehacer desde ahí;
-                // si la movió hacia adelante, el tramo viejo también quedó desactualizado.
+                // Los retiros vinculados siguen al ingreso en fecha y sucursal
+                if ($cantHijos > 0) {
+                    $conn->prepare("
+                        UPDATE movimientos
+                        SET fecha = :fecha, sucursal_id = :sucursal_id, sucursal_nombre = :sucursal_nombre
+                        WHERE movimiento_padre_id = :id
+                    ")->execute([
+                        ':fecha' => $fecha,
+                        ':sucursal_id' => $sucursalId,
+                        ':sucursal_nombre' => $sucursalNombre,
+                        ':id' => $id
+                    ]);
+                }
+
+                // Recalcular saldos desde la fecha MÁS ANTIGUA entre la original, la nueva
+                // y la de los retiros vinculados: si la edición movió la fecha hacia atrás
+                // hay que rehacer desde ahí; si la movió hacia adelante, el tramo viejo
+                // también quedó desactualizado. Los retiros pueden venir con una fecha
+                // distinta a la del ingreso (registros cargados antes de este arreglo).
                 $fechaOriginal = $movActual['fecha'] ?? null;
-                $desde = ($fechaOriginal && $fechaOriginal < $fecha) ? $fechaOriginal : $fecha;
+                $candidatas = array_filter([$fechaOriginal, $fecha, $hijos['fecha_min'] ?? null]);
+                $desde = min($candidatas);
                 recalcularSaldos($conn, $desde);
 
                 // Obtener nuevo saldo (por fecha cronológica)
