@@ -474,6 +474,14 @@
             overflow-x: auto;
         }
 
+        /* Las celdas sin dato se renderizan vacías (no con "-") para que en móvil
+           se puedan ocultar y no gasten un renglón. En escritorio se les dibuja
+           el guion por CSS, así la tabla se sigue leyendo igual que antes. */
+        td:empty::after {
+            content: "—";
+            color: var(--gris-claro);
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -847,60 +855,77 @@
 
         /* Responsive */
         @media (max-width: 768px) {
+            /* Header compacto: el título va en la misma línea que los saldos.
+               Apilado ocupaba 94px fijos, casi un quinto de la pantalla. */
             .header-fijo {
-                padding: 10px 15px;
-                min-height: 80px;
+                padding: 8px 12px;
+                min-height: 0;
             }
 
             .header-content {
-                flex-direction: column;
-                text-align: center;
+                flex-direction: row;
+                flex-wrap: nowrap;
+                align-items: center;
                 gap: 8px;
             }
 
             .header-titulo {
-                font-size: 1.2rem;
+                font-size: 0.95rem;
+                white-space: nowrap;
+                flex-shrink: 0;
             }
 
             .header-saldo {
-                justify-content: center;
-                width: 100%;
+                justify-content: flex-end;
+                gap: 6px;
+                flex: 1;
+                min-width: 0;
             }
 
             .saldo-box {
-                padding: 6px 12px;
-                flex: 1;
+                padding: 4px 8px;
+                min-width: 0;
             }
 
             .saldo-label {
-                font-size: 0.65rem;
+                font-size: 0.6rem;
             }
 
             .saldo-valor {
-                font-size: 1rem;
+                font-size: 0.85rem;
+                white-space: nowrap;
             }
 
+            /* Navegación: 6 secciones no entran en una fila de 375px — "Configuración"
+               quedaba fuera de pantalla y sin ninguna señal de que se podía deslizar.
+               Se pasa a dos filas de tres, así todas quedan visibles y con buen
+               tamaño para el dedo. */
             .nav-container {
                 position: fixed;
-                top: 80px;
-                height: 45px;
+                height: auto;
             }
 
             .nav-menu {
-                justify-content: stretch;
-                height: 100%;
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                overflow-x: visible;
+                height: auto;
             }
 
+            /* min-height 44px: es el mínimo cómodo para tocar con el dedo */
             .nav-btn {
-                padding: 10px 8px;
-                font-size: 0.75rem;
-                flex: 1;
+                padding: 10px 4px;
+                min-height: 44px;
+                font-size: 0.72rem;
                 text-align: center;
+                border-bottom: 3px solid transparent;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
 
             .main-content {
                 padding: 10px;
-                padding-top: 140px;
             }
 
             .card {
@@ -935,11 +960,21 @@
                 font-size: 0.85rem;
             }
 
+            /* Los botones de acción principal ocupan todo el ancho, pero los chicos
+               (agregar retiro, editar/borrar de las tablas) NO: si no, un botón
+               secundario queda con más peso visual que "Registrar Movimiento". */
             .btn {
                 padding: 12px 15px;
                 font-size: 0.9rem;
                 width: 100%;
                 justify-content: center;
+            }
+
+            .btn-sm {
+                width: auto;
+                padding: 9px 14px;
+                min-height: 40px;
+                font-size: 0.8rem;
             }
 
             .graficos-grid {
@@ -978,203 +1013,159 @@
                 width: 100%;
             }
 
-            /* Tabla responsive - formato lista */
+            /* ===== Tabla responsive: cada fila es una tarjeta "etiqueta: valor" =====
+               Se usa data-label (que ya traen todas las celdas) en lugar de mapear
+               columnas por posicion con nth-child. Ese mapa se rompia cada vez que
+               se agregaba una columna: las celdas caian en la misma fila de la
+               grilla y el texto se superponia. */
             .tabla-container {
                 margin: 0 -15px;
                 padding: 0;
+                overflow-x: visible;
             }
 
             table {
-                font-size: 0.8rem;
+                font-size: 0.85rem;
+                display: block;
             }
 
             thead {
                 display: none;
             }
 
+            tbody {
+                display: block;
+            }
+
             tbody tr {
-                display: grid;
-                grid-template-columns: 1fr auto;
-                grid-template-rows: auto auto auto auto;
-                gap: 2px 10px;
+                display: block;
                 padding: 12px 15px;
-                border-bottom: 1px solid var(--gris-claro);
                 background: var(--blanco);
+                border-bottom: 8px solid var(--blanco-humo);
             }
 
-            tbody tr:active {
-                background: var(--blanco-humo);
-            }
-
-            td {
-                padding: 0;
+            tbody td {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 12px;
+                padding: 4px 0;
                 border: none;
+                text-align: right;
+                word-break: break-word;
             }
 
-            td:nth-child(1) {
-                /* Fecha */
-                grid-column: 1;
-                grid-row: 1;
-                font-weight: 600;
-                color: var(--gris-oscuro);
-            }
-
-            td:nth-child(2) {
-                /* Sucursal */
-                grid-column: 1;
-                grid-row: 2;
-                font-size: 0.75rem;
+            tbody td::before {
+                content: attr(data-label);
+                flex: 0 0 auto;
+                text-align: left;
+                font-size: 0.68rem;
+                font-weight: 700;
+                letter-spacing: 0.03em;
+                text-transform: uppercase;
                 color: var(--gris-medio);
+                white-space: nowrap;
             }
 
-            td:nth-child(3) {
-                /* Concepto */
-                grid-column: 1;
-                grid-row: 2;
-                font-size: 0.75rem;
-                color: var(--gris-medio);
+            /* Celdas sin dato: en movil no ocupan renglon */
+            tbody td:empty {
+                display: none;
             }
 
-            td:nth-child(4) {
-                /* Colaborador */
-                grid-column: 1;
-                grid-row: 3;
-                font-size: 0.7rem;
-                color: var(--gris-medio);
+            /* Agrupa el valor de una celda en un solo bloque: si el día y la hora
+               (o la fecha y la marca de retroactivo) van sueltos, el space-between
+               los manda a extremos opuestos del renglón. */
+            .celda-valor {
+                text-align: right;
             }
 
-            td:nth-child(5) {
-                /* Observación */
-                grid-column: 1;
-                grid-row: 4;
-                font-size: 0.7rem;
-                color: var(--gris-medio);
-                font-style: italic;
+            /* Formulario más compacto: las tarjetas y los espacios de escritorio
+               obligaban a scrollear de más para registrar un simple movimiento. */
+            .card {
+                padding: 14px 12px;
             }
 
-            td:nth-child(6),
-            /* Ingreso */
-            td:nth-child(7) {
-                /* Egreso */
-                grid-column: 2;
-                grid-row: 1;
+            .form-group label {
+                font-size: 0.8rem;
+                margin-bottom: 3px;
+            }
+
+            .card-titulo {
+                font-size: 0.95rem;
+                margin-bottom: 12px;
+                padding-bottom: 8px;
+            }
+
+            /* Filas de retiro: más ajustadas y con la X arriba a la derecha,
+               para que cada retiro no ocupe media pantalla. */
+            .retiro-fila {
+                position: relative;
+                padding: 10px 34px 10px 10px;
+                gap: 6px;
+            }
+
+            .retiro-quitar {
+                position: absolute;
+                top: 2px;
+                right: 2px;
+                margin-top: 0;
+                grid-column: auto;
+                min-width: 40px;
+                min-height: 40px;
+            }
+
+            .retiro-campo > span {
+                font-size: 0.68rem;
+            }
+
+            /* La primera celda (fecha) hace de titulo de la tarjeta */
+            tbody td:first-child {
                 font-size: 1rem;
                 font-weight: 700;
-                text-align: right;
+                color: var(--gris-oscuro);
+                padding-bottom: 8px;
+                margin-bottom: 4px;
+                border-bottom: 1px solid var(--gris-claro);
             }
 
-            td:nth-child(8) {
-                /* Saldo */
-                grid-column: 2;
-                grid-row: 2;
-                font-size: 0.7rem;
-                color: var(--gris-medio);
-                text-align: right;
+            /* Montos destacados */
+            tbody td.monto-ingreso,
+            tbody td.monto-egreso {
+                font-size: 0.95rem;
+                font-weight: 700;
             }
 
-            td:nth-child(8)::before {
-                content: "Saldo: ";
-            }
-
-            td.acciones-cell {
-                grid-column: 2;
-                grid-row: 3;
+            /* Acciones: botones a la derecha, sin etiqueta */
+            tbody td.acciones-cell {
                 justify-content: flex-end;
-                gap: 8px;
+                gap: 10px;
+                padding-top: 10px;
             }
 
-            td::before {
+            tbody td.acciones-cell::before {
                 display: none;
             }
 
-            .btn-sm {
-                padding: 6px 10px;
-                font-size: 0.75rem;
+            /* Fila de "no hay datos" / "cargando": ocupa todo el ancho, centrada */
+            tbody tr td[colspan] {
+                display: block;
+                text-align: center;
             }
 
-            /* Ocultar datos vacíos */
-            td:empty {
+            tbody tr td[colspan]::before {
                 display: none;
             }
 
-            /* Tabla ingresos simplificada */
-            #tablaIngresos tr {
-                grid-template-columns: 1fr auto;
-                grid-template-rows: auto auto;
+            tfoot tr {
+                display: block;
+                padding: 12px 15px;
             }
 
-            /* Tabla egresos simplificada (con columna colaborador) */
-            #tablaEgresos tr {
-                grid-template-columns: 1fr auto;
-                grid-template-rows: auto auto auto;
-            }
-
-            /* Tabla ingresos: 5 columnas (Fecha, Sucursal, Obs, Monto, Acciones) */
-            #tablaIngresos td:nth-child(1) {
-                /* Fecha */
-                grid-column: 1;
-                grid-row: 1;
-            }
-
-            #tablaIngresos td:nth-child(2) {
-                /* Sucursal */
-                grid-column: 1;
-                grid-row: 2;
-            }
-
-            #tablaIngresos td:nth-child(3) {
-                /* Observación */
-                display: none;
-            }
-
-            #tablaIngresos td:nth-child(4) {
-                /* Monto */
-                grid-column: 2;
-                grid-row: 1;
-                font-size: 1rem;
-            }
-
-            #tablaIngresos td:nth-child(5) {
-                /* Acciones */
-                grid-column: 2;
-                grid-row: 2;
-            }
-
-            /* Tabla egresos: 6 columnas (Fecha, Concepto, Colaborador, Obs, Monto, Acciones) */
-            #tablaEgresos td:nth-child(1) {
-                /* Fecha */
-                grid-column: 1;
-                grid-row: 1;
-            }
-
-            #tablaEgresos td:nth-child(2) {
-                /* Concepto */
-                grid-column: 1;
-                grid-row: 2;
-            }
-
-            #tablaEgresos td:nth-child(3) {
-                /* Colaborador */
-                grid-column: 1;
-                grid-row: 3;
-            }
-
-            #tablaEgresos td:nth-child(4) {
-                /* Observación */
-                display: none;
-            }
-
-            #tablaEgresos td:nth-child(5) {
-                /* Monto */
-                grid-column: 2;
-                grid-row: 1;
-                font-size: 1rem;
-            }
-
-            #tablaEgresos td:nth-child(6) {
-                /* Acciones */
-                grid-column: 2;
-                grid-row: 2;
+            tfoot td {
+                display: flex;
+                justify-content: space-between;
+                border: none;
+                padding: 4px 0;
             }
 
             /* Modal responsive */
@@ -2201,6 +2192,16 @@
         let chartComparativaMes, chartEgresosConceptoPie, chartRepIngresosSucursal, chartEgresosColaborador, chartEgresosProveedor;
 
         // ==================== AJUSTE DINÁMICO DEL HEADER ====================
+        /**
+         * El header y la nav son fijos, así que hay que separar el contenido de abajo
+         * con un padding igual a su altura.
+         *
+         * Se recalcula con un ResizeObserver y no una sola vez al cargar: medir en
+         * DOMContentLoaded daba un valor viejo (el header todavía no había terminado
+         * de acomodarse) y quedaban ~130px de vacío arriba en el celular hasta que
+         * el usuario rotara la pantalla. El observer lo corrige también cuando cambia
+         * el largo del saldo, al terminar de cargar las fuentes o al rotar.
+         */
         function ajustarEspaciadoHeader() {
             const header = document.querySelector('.header-fijo');
             const nav = document.querySelector('.nav-container');
@@ -2209,17 +2210,29 @@
             if (header && nav && main) {
                 const headerHeight = header.offsetHeight;
                 const navHeight = nav.offsetHeight;
-                const totalHeight = headerHeight + navHeight + 15; // 15px extra de margen
+                const totalHeight = headerHeight + navHeight + 10;
 
                 nav.style.top = headerHeight + 'px';
                 main.style.paddingTop = totalHeight + 'px';
             }
         }
 
+        function observarAlturaHeader() {
+            const header = document.querySelector('.header-fijo');
+            const nav = document.querySelector('.nav-container');
+            if (!header || !nav || typeof ResizeObserver === 'undefined') return;
+
+            const obs = new ResizeObserver(() => ajustarEspaciadoHeader());
+            obs.observe(header);
+            obs.observe(nav);
+        }
+
         // ==================== INICIALIZACIÓN ====================
         document.addEventListener('DOMContentLoaded', async function () {
             ajustarEspaciadoHeader();
+            observarAlturaHeader();
             window.addEventListener('resize', ajustarEspaciadoHeader);
+            window.addEventListener('orientationchange', ajustarEspaciadoHeader);
 
             await cargarDatosIniciales();
             // Después de cargar los datos, así los desplegables ya tienen sus opciones.
@@ -3478,22 +3491,17 @@
             tbody.innerHTML = ultimos.map(mov => {
                 const esCaja = mov.origen === 'caja';
                 const badge = esCaja ? ' <span class="badge-caja">💰 Directo de caja</span>' : '';
-                // Se marca cuando la fecha del movimiento no coincide con el día en que
-                // se asentó: explica por qué una fila con fecha vieja aparece arriba.
-                const retro = esRetroactivo(mov)
-                    ? ' <span style="font-size:0.7rem;color:#b26a00;white-space:nowrap;">⏱ retroactivo</span>'
-                    : '';
                 return `
                 <tr>
-                    <td data-label="Fecha Mov.">${formatearFecha(mov.fecha)}${retro}</td>
+                    <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                     <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
-                    <td data-label="Sucursal">${mov.sucursal_nombre || '-'}</td>
-                    <td data-label="Concepto">${(mov.concepto_nombre || '-')}${badge}</td>
-                    <td data-label="Colaborador">${mov.colaborador_nombre || '-'}</td>
-                    <td data-label="Proveedor">${mov.proveedor_nombre || '-'}</td>
-                    <td data-label="Observación">${mov.observacion || '-'}</td>
-                    <td data-label="Ingreso" class="monto-ingreso">${mov.tipo === 'ingreso' ? formatearMonto(mov.monto) : '-'}</td>
-                    <td data-label="Egreso" class="monto-egreso">${mov.tipo === 'egreso' ? formatearMonto(mov.monto) : '-'}</td>
+                    <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
+                    <td data-label="Concepto">${(mov.concepto_nombre || '')}${badge}</td>
+                    <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
+                    <td data-label="Proveedor">${mov.proveedor_nombre || ''}</td>
+                    <td data-label="Observación">${mov.observacion || ''}</td>
+                    <td data-label="Ingreso" class="monto-ingreso">${mov.tipo === 'ingreso' ? formatearMonto(mov.monto) : ''}</td>
+                    <td data-label="Egreso" class="monto-egreso">${mov.tipo === 'egreso' ? formatearMonto(mov.monto) : ''}</td>
                     <td data-label="Saldo">${formatearMonto(mov.saldo)}</td>
                     <td class="acciones-cell">
                         <button class="btn btn-sm btn-secondary" onclick="abrirEditar(${mov.id})">✏️</button>
@@ -3577,10 +3585,10 @@
 
                 tbody.innerHTML = movimientos.map(mov => `
                     <tr>
-                        <td data-label="Fecha Mov.">${formatearFecha(mov.fecha)}${esRetroactivo(mov) ? ' <span style="font-size:0.7rem;color:#b26a00;white-space:nowrap;">⏱ retroactivo</span>' : ''}</td>
+                        <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
-                        <td data-label="Sucursal">${mov.sucursal_nombre || '-'}</td>
-                        <td data-label="Observación">${mov.observacion || '-'}</td>
+                        <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
+                        <td data-label="Observación">${mov.observacion || ''}</td>
                         <td data-label="Monto" class="monto-ingreso">${formatearMonto(mov.monto)}</td>
                         <td class="acciones-cell">
                             <button class="btn btn-sm btn-secondary" onclick="abrirEditar(${mov.id})">✏️</button>
@@ -3726,12 +3734,12 @@
                     const badge = esCaja ? ' <span class="badge-caja">💰 Directo de caja</span>' : '';
                     return `
                     <tr>
-                        <td data-label="Fecha Mov.">${formatearFecha(mov.fecha)}${esRetroactivo(mov) ? ' <span style="font-size:0.7rem;color:#b26a00;white-space:nowrap;">⏱ retroactivo</span>' : ''}</td>
+                        <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
-                        <td data-label="Concepto">${(mov.concepto_nombre || '-')}${badge}</td>
-                        <td data-label="Colaborador">${mov.colaborador_nombre || '-'}</td>
-                        <td data-label="Proveedor">${mov.proveedor_nombre || '-'}</td>
-                        <td data-label="Observación">${mov.observacion || '-'}</td>
+                        <td data-label="Concepto">${(mov.concepto_nombre || '')}${badge}</td>
+                        <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
+                        <td data-label="Proveedor">${mov.proveedor_nombre || ''}</td>
+                        <td data-label="Observación">${mov.observacion || ''}</td>
                         <td data-label="Monto" class="monto-egreso">${formatearMonto(mov.monto)}</td>
                         <td class="acciones-cell">
                             <button class="btn btn-sm btn-secondary" onclick="abrirEditar(${mov.id})">✏️</button>
@@ -5249,13 +5257,13 @@
                         : '<span style="color:var(--rojo);font-weight:600;">↘ Gasto</span>';
                     return `
                     <tr>
-                        <td data-label="Fecha Mov.">${formatearFecha(m.fecha)}${esRetroactivo(m) ? ' <span style="font-size:0.7rem;color:#b26a00;white-space:nowrap;">⏱ retroactivo</span>' : ''}</td>
+                        <td data-label="Fecha Mov.">${celdaFechaMov(m)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(m.created_at)}</td>
                         <td data-label="Acción">${tipoTag}</td>
-                        <td data-label="Concepto">${m.concepto_nombre || '-'}</td>
-                        <td data-label="Observación">${m.observacion || '-'}</td>
-                        <td data-label="Aporte" class="monto-ingreso">${esAporte ? formatearMonto(parseFloat(m.monto)) : '-'}</td>
-                        <td data-label="Gasto" class="monto-egreso">${!esAporte ? formatearMonto(parseFloat(m.monto)) : '-'}</td>
+                        <td data-label="Concepto">${m.concepto_nombre || ''}</td>
+                        <td data-label="Observación">${m.observacion || ''}</td>
+                        <td data-label="Aporte" class="monto-ingreso">${esAporte ? formatearMonto(parseFloat(m.monto)) : ''}</td>
+                        <td data-label="Gasto" class="monto-egreso">${!esAporte ? formatearMonto(parseFloat(m.monto)) : ''}</td>
                         <td data-label="Saldo Acumulado" style="font-weight:600;">${formatearMonto(saldosAcum[m.id] || 0)}</td>
                     </tr>`;
                 }).join('');
@@ -5496,16 +5504,16 @@
                         : '<span style="color:var(--rojo);font-weight:600;">Egreso</span>';
                     return `
                     <tr>
-                        <td data-label="Fecha Mov.">${formatearFecha(mov.fecha)}${esRetroactivo(mov) ? ' <span style="font-size:0.7rem;color:#b26a00;white-space:nowrap;">⏱ retroactivo</span>' : ''}</td>
+                        <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
                         <td data-label="Tipo">${tipoTag}${badgeCaja}</td>
-                        <td data-label="Sucursal">${mov.sucursal_nombre || '-'}</td>
-                        <td data-label="Concepto">${mov.concepto_nombre || '-'}</td>
-                        <td data-label="Colaborador">${mov.colaborador_nombre || '-'}</td>
-                        <td data-label="Proveedor">${mov.proveedor_nombre || '-'}</td>
-                        <td data-label="Observación">${mov.observacion || '-'}</td>
-                        <td data-label="Ingreso" class="monto-ingreso">${esIngreso ? formatearMonto(monto) : '-'}</td>
-                        <td data-label="Egreso" class="monto-egreso">${!esIngreso ? formatearMonto(monto) : '-'}</td>
+                        <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
+                        <td data-label="Concepto">${mov.concepto_nombre || ''}</td>
+                        <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
+                        <td data-label="Proveedor">${mov.proveedor_nombre || ''}</td>
+                        <td data-label="Observación">${mov.observacion || ''}</td>
+                        <td data-label="Ingreso" class="monto-ingreso">${esIngreso ? formatearMonto(monto) : ''}</td>
+                        <td data-label="Egreso" class="monto-egreso">${!esIngreso ? formatearMonto(monto) : ''}</td>
                     </tr>`;
                 }).join('');
 
@@ -5584,9 +5592,9 @@
                     return `
                     <tr>
                         <td data-label="Fecha">${formatearFecha(mov.fecha)}${badge}</td>
-                        <td data-label="Sucursal">${mov.sucursal_nombre || '-'}</td>
-                        <td data-label="Colaborador">${mov.colaborador_nombre || '-'}</td>
-                        <td data-label="Observación">${mov.observacion || '-'}</td>
+                        <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
+                        <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
+                        <td data-label="Observación">${mov.observacion || ''}</td>
                         <td data-label="Monto" class="monto-egreso">${formatearMonto(mov.monto)}</td>
                     </tr>`;
                 }).join('');
@@ -6242,10 +6250,20 @@
         }
 
         // Celda de asentamiento: día arriba, hora debajo en chico, para no ensanchar la tabla.
+        // Va envuelto en UN solo elemento: en móvil las celdas son flex y, sueltos,
+        // el día y la hora se separaban a los extremos de la fila.
         function celdaAsentamiento(ts) {
             const p = partesAsentamiento(ts);
-            if (!p) return '<span style="color:var(--gris-medio);">-</span>';
-            return `${p.dia}<span style="display:block;font-size:0.75rem;color:#636e72;">${p.hora}</span>`;
+            if (!p) return '';
+            return `<span class="celda-valor">${p.dia}<span style="display:block;font-size:0.75rem;color:#636e72;">${p.hora}</span></span>`;
+        }
+
+        // Celda de fecha del movimiento, con la marca de retroactivo agrupada al lado
+        function celdaFechaMov(mov) {
+            const retro = esRetroactivo(mov)
+                ? ' <span style="font-size:0.7rem;color:#b26a00;white-space:nowrap;">⏱ retroactivo</span>'
+                : '';
+            return `<span class="celda-valor">${formatearFecha(mov.fecha)}${retro}</span>`;
         }
 
         /**

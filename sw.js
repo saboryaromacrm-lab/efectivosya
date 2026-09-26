@@ -1,6 +1,6 @@
 // Service Worker para Caja SYA - PWA
 // Subir la versión invalida el cache viejo y fuerza a bajar el index.html nuevo.
-const CACHE_NAME = 'caja-sya-v8';
+const CACHE_NAME = 'caja-sya-v9';
 const CACHE_URLS = [
   './',
   './index.html',
