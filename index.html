@@ -1398,7 +1398,7 @@
             </div>
 
             <div class="card">
-                <h2 class="card-titulo">Últimos 10 Movimientos <span style="font-size:0.8rem;font-weight:400;color:#636e72;">(por orden de carga)</span></h2>
+                <h2 class="card-titulo">Últimos Movimientos <span style="font-size:0.8rem;font-weight:400;color:#636e72;">(por orden de carga)</span> <span id="contadorUltimos" style="font-size:0.8rem;font-weight:400;color:#636e72;"></span></h2>
                 <div class="tabla-container">
                     <table>
                         <thead>
@@ -1419,6 +1419,10 @@
                         <tbody id="tablaUltimosMovimientos">
                         </tbody>
                     </table>
+                </div>
+                <!-- "Ver más": suma de a 10 movimientos más, con el saldo encadenado -->
+                <div id="verMasUltimosBox" style="display:none;text-align:center;margin-top:15px;">
+                    <button type="button" id="btnVerMasUltimos" class="btn btn-secondary" onclick="cargarMasMovimientos()">Ver 10 más ▼</button>
                 </div>
             </div>
         </section>
@@ -2325,17 +2329,71 @@
             else if (prefijo === 'rep') filtrarReportes();
         }
 
+        // ==================== ÚLTIMOS MOVIMIENTOS (paginado con "Ver más") ====================
+        const ULTIMOS_POR_PAGINA = 10;
+        let hayMasUltimos = false;
+        let cargandoMasUltimos = false;
+        // Se incrementa en cada recarga completa. Si llega la respuesta de un "Ver más"
+        // que salió ANTES de una recarga (p. ej. se registró un movimiento en el medio),
+        // se descarta: si no, se pegaría un bloque viejo debajo de la lista nueva.
+        let generacionUltimos = 0;
+
+        /**
+         * Recarga la lista desde arriba. Tras registrar, editar o borrar se vuelven a
+         * pedir TODAS las filas que el usuario ya tenía abiertas con "Ver más" (nunca
+         * menos de 10), para no colapsarle la lista cada vez que toca algo.
+         */
         async function cargarUltimosMovimientos() {
+            const generacion = ++generacionUltimos;
+            const cantidad = Math.max(ULTIMOS_POR_PAGINA, (datos.ultimosMovimientos || []).length);
             try {
                 // cache: 'no-store' además de los headers del servidor: en PWA/mobile el
                 // service worker o el navegador pueden servir una respuesta vieja y dar
                 // la sensación de que "el movimiento no se guardó".
-                const response = await fetch(`${API_URL}?action=ultimos&limit=10`, { cache: 'no-store' });
-                const movimientos = await response.json();
-                datos.ultimosMovimientos = Array.isArray(movimientos) ? movimientos : [];
+                const response = await fetch(`${API_URL}?action=ultimos&paginado=1&limit=${cantidad}`, { cache: 'no-store' });
+                const data = await response.json();
+                if (generacion !== generacionUltimos) return; // llegó otra recarga más nueva
+                datos.ultimosMovimientos = Array.isArray(data.movimientos) ? data.movimientos : [];
+                hayMasUltimos = !!data.hayMas;
                 actualizarTablaUltimosMovimientos();
             } catch (error) {
                 console.error('Error:', error);
+            }
+        }
+
+        // Agrega los 10 movimientos siguientes debajo de los que ya se ven
+        async function cargarMasMovimientos() {
+            if (cargandoMasUltimos || !hayMasUltimos) return; // evita pedir dos veces el mismo bloque
+            const lista = datos.ultimosMovimientos || [];
+            if (!lista.length) return;
+
+            const generacion = generacionUltimos;
+            const cursor = lista[lista.length - 1].id; // id de la última fila mostrada
+            const btn = document.getElementById('btnVerMasUltimos');
+            cargandoMasUltimos = true;
+            btn.disabled = true;
+            btn.textContent = 'Cargando...';
+
+            try {
+                const response = await fetch(
+                    `${API_URL}?action=ultimos&paginado=1&limit=${ULTIMOS_POR_PAGINA}&antesDeId=${cursor}`,
+                    { cache: 'no-store' }
+                );
+                const data = await response.json();
+                if (generacion !== generacionUltimos) return; // la lista se recargó mientras tanto
+                const nuevos = Array.isArray(data.movimientos) ? data.movimientos : [];
+                // Por las dudas, no repetir filas que ya estén en pantalla
+                const yaEstan = new Set(lista.map(m => String(m.id)));
+                datos.ultimosMovimientos = lista.concat(nuevos.filter(m => !yaEstan.has(String(m.id))));
+                hayMasUltimos = !!data.hayMas;
+                actualizarTablaUltimosMovimientos();
+            } catch (error) {
+                console.error('Error cargando más movimientos:', error);
+                mostrarToast('No se pudieron cargar más movimientos', 'error');
+            } finally {
+                cargandoMasUltimos = false;
+                btn.disabled = false;
+                btn.textContent = 'Ver 10 más ▼';
             }
         }
 
@@ -3480,8 +3538,19 @@
 
         function actualizarTablaUltimosMovimientos() {
             const tbody = document.getElementById('tablaUltimosMovimientos');
-            // La lista ya viene del servidor en orden de carga (id DESC) y limitada a 10.
+            // La lista viene del servidor en orden de carga (id DESC): los primeros 10
+            // más los bloques que se hayan ido sumando con "Ver más".
             const ultimos = datos.ultimosMovimientos || [];
+
+            // Botón "Ver más" y contador
+            const boxVerMas = document.getElementById('verMasUltimosBox');
+            if (boxVerMas) boxVerMas.style.display = hayMasUltimos ? 'block' : 'none';
+            const contador = document.getElementById('contadorUltimos');
+            if (contador) {
+                contador.textContent = ultimos.length
+                    ? `· mostrando ${ultimos.length}${hayMasUltimos ? '' : ' (todos)'}`
+                    : '';
+            }
 
             if (ultimos.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;">No hay movimientos</td></tr>';

@@ -890,12 +890,34 @@ try {
         // por debajo de los movimientos con fecha más nueva ya existentes.
         // `id` es AUTO_INCREMENT = orden de inserción, y usa la PRIMARY KEY (sin filesort).
         case 'ultimos':
+            // Clamp defensivo. El techo es 500 porque, tras cargar/editar/borrar, la
+            // pantalla vuelve a pedir TODAS las filas que el usuario ya tenía abiertas
+            // con "Ver más", para no colapsarle la lista a 10.
             $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
-            $limit = max(1, min($limit, 100)); // clamp defensivo
-            $stmt = $conn->prepare("SELECT * FROM movimientos ORDER BY id DESC LIMIT :limit");
-            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $limit = max(1, min($limit, 500));
+
+            // PAGINACIÓN POR CURSOR: `antesDeId` = id de la última fila ya mostrada.
+            // Se pide "los anteriores a ese id" y no "saltear N filas" (OFFSET): si
+            // mientras el usuario navega se carga un movimiento nuevo, con OFFSET se
+            // correría todo una posición y se repetiría una fila; con el cursor no.
+            // Además es un rango sobre la PRIMARY KEY, así que no se degrada con el volumen.
+            $antesDeId = isset($_GET['antesDeId']) ? intval($_GET['antesDeId']) : 0;
+
+            if ($antesDeId > 0) {
+                $stmt = $conn->prepare("SELECT * FROM movimientos WHERE id < :antes ORDER BY id DESC LIMIT :limit");
+                $stmt->bindValue(':antes', $antesDeId, PDO::PARAM_INT);
+            } else {
+                $stmt = $conn->prepare("SELECT * FROM movimientos ORDER BY id DESC LIMIT :limit");
+            }
+            // Se pide una fila de más sólo para saber si queda algo para "Ver más"
+            $stmt->bindValue(':limit', $limit + 1, PDO::PARAM_INT);
             $stmt->execute();
             $ultimos = $stmt->fetchAll();
+
+            $hayMas = count($ultimos) > $limit;
+            if ($hayMas) {
+                array_pop($ultimos);
+            }
 
             // SALDO EN ORDEN DE CARGA (`saldo_carga`): lo que tenía la caja justo
             // después de cargar cada movimiento, siguiendo el orden de ESTA lista.
@@ -908,6 +930,24 @@ try {
             // centavos enteros para no arrastrar errores de redondeo.
             $row = $conn->query("SELECT saldo FROM movimientos ORDER BY fecha DESC, id DESC LIMIT 1")->fetch();
             $saldoCent = $row ? (int) round(floatval($row['saldo']) * 100) : 0;
+
+            // Para una página siguiente, el saldo de arranque es el actual menos el
+            // efecto de TODO lo que se cargó desde el cursor en adelante (lo que ya se
+            // mostró arriba, y también lo cargado recién). Así la primera fila de este
+            // bloque encadena exacto con la última del bloque anterior.
+            if ($antesDeId > 0) {
+                $stmtD = $conn->prepare("
+                    SELECT COALESCE(SUM(CASE
+                        WHEN tipo = 'ingreso' THEN monto
+                        WHEN reserva_accion = 'gasto' THEN 0
+                        ELSE -monto
+                    END), 0) AS efecto
+                    FROM movimientos
+                    WHERE id >= :antes
+                ");
+                $stmtD->execute([':antes' => $antesDeId]);
+                $saldoCent -= (int) round(floatval($stmtD->fetch()['efecto']) * 100);
+            }
 
             foreach ($ultimos as &$m) {
                 $m['saldo_carga'] = $saldoCent / 100;
@@ -922,6 +962,11 @@ try {
             }
             unset($m);
 
+            // Formato nuevo (con hayMas) sólo si el front lo pide; si no, la lista
+            // pelada de siempre, para no romper un celular con la versión vieja cacheada.
+            if (!empty($_GET['paginado'])) {
+                jsonResponse(['movimientos' => $ultimos, 'hayMas' => $hayMas]);
+            }
             jsonResponse($ultimos);
             break;
 
