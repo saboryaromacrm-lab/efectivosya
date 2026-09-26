@@ -1412,7 +1412,7 @@
                                 <th>Observación</th>
                                 <th>Ingreso</th>
                                 <th>Egreso</th>
-                                <th title="Saldo de caja acumulado hasta ese movimiento, contando TODOS los movimientos por fecha. Esta lista está por orden de carga, así que no se puede sumar fila por fila.">Saldo a la fecha ⓘ</th>
+                                <th title="Saldo de caja después de cargar cada movimiento, en el mismo orden de esta lista. El de arriba es el Saldo Actual; cada fila sale de la de abajo sumando el ingreso o restando el egreso.">Saldo</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -3502,7 +3502,7 @@
                     <td data-label="Observación">${mov.observacion || ''}</td>
                     <td data-label="Ingreso" class="monto-ingreso">${mov.tipo === 'ingreso' ? formatearMonto(mov.monto) : ''}</td>
                     <td data-label="Egreso" class="monto-egreso">${mov.tipo === 'egreso' ? formatearMonto(mov.monto) : ''}</td>
-                    <td data-label="Saldo a la fecha">${formatearMonto(mov.saldo)}</td>
+                    <td data-label="Saldo">${formatearMonto(mov.saldo_carga ?? mov.saldo)}</td>
                     <td class="acciones-cell">
                         <button class="btn btn-sm btn-secondary" onclick="abrirEditar(${mov.id})">✏️</button>
                         <button class="btn btn-sm btn-danger" onclick="abrirEliminar(${mov.id})">🗑️</button>

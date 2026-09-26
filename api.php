@@ -895,7 +895,34 @@ try {
             $stmt = $conn->prepare("SELECT * FROM movimientos ORDER BY id DESC LIMIT :limit");
             $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
             $stmt->execute();
-            jsonResponse($stmt->fetchAll());
+            $ultimos = $stmt->fetchAll();
+
+            // SALDO EN ORDEN DE CARGA (`saldo_carga`): lo que tenía la caja justo
+            // después de cargar cada movimiento, siguiendo el orden de ESTA lista.
+            // La columna `saldo` es el acumulado cronológico por fecha, que no se puede
+            // seguir fila por fila en una lista ordenada por carga. Acá la fila de arriba
+            // coincide con el "Saldo Actual" del encabezado y cada fila de abajo sale de
+            // deshacer el movimiento de arriba.
+            // Se usa la misma fuente que el endpoint `saldo`, para que el encabezado
+            // y la primera fila muestren siempre el mismo número. Se calcula en
+            // centavos enteros para no arrastrar errores de redondeo.
+            $row = $conn->query("SELECT saldo FROM movimientos ORDER BY fecha DESC, id DESC LIMIT 1")->fetch();
+            $saldoCent = $row ? (int) round(floatval($row['saldo']) * 100) : 0;
+
+            foreach ($ultimos as &$m) {
+                $m['saldo_carga'] = $saldoCent / 100;
+                $montoCent = (int) round(floatval($m['monto']) * 100);
+                // Deshacer este movimiento = saldo que había antes de cargarlo.
+                // Misma regla que recalcularSaldos(): el gasto desde reserva no toca la caja.
+                if ($m['tipo'] === 'ingreso') {
+                    $saldoCent -= $montoCent;
+                } elseif (($m['reserva_accion'] ?? null) !== 'gasto') {
+                    $saldoCent += $montoCent;
+                }
+            }
+            unset($m);
+
+            jsonResponse($ultimos);
             break;
 
         // ==================== SALDO (liviano, para el header) ====================
