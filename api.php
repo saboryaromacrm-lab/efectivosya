@@ -357,35 +357,71 @@ try {
                     }
                 }
 
-                // Validar datos de RETIRO (solo para ingresos)
-                $montoRetiro = 0;
-                $retiroConceptoId = null;
-                $retiroConceptoNombre = null;
-                $retiroObservacion = null;
+                // ==================== RETIROS DE CAJA (solo para ingresos) ====================
+                // Se aceptan VARIOS retiros por ingreso, en `retiros` (lista).
+                // Por compatibilidad se sigue aceptando el formato viejo de un único
+                // retiro suelto (montoRetiro / conceptoRetiroId / observacionRetiro),
+                // por si algún navegador quedó con la versión anterior cacheada.
+                $retirosValidados = [];
 
-                if ($data['tipo'] === 'ingreso' && isset($data['montoRetiro'])) {
-                    $montoRetiro = floatval($data['montoRetiro']);
-                    if ($montoRetiro < 0) {
-                        jsonResponse(['error' => 'El monto de retiro no puede ser negativo'], 400);
+                if ($data['tipo'] === 'ingreso') {
+                    $retirosEntrada = [];
+
+                    if (!empty($data['retiros']) && is_array($data['retiros'])) {
+                        $retirosEntrada = $data['retiros'];
+                    } elseif (isset($data['montoRetiro'])) {
+                        $retirosEntrada = [[
+                            'monto' => $data['montoRetiro'],
+                            'conceptoId' => $data['conceptoRetiroId'] ?? null,
+                            'observacion' => $data['observacionRetiro'] ?? null,
+                        ]];
                     }
-                    if ($montoRetiro > 0) {
-                        if ($montoRetiro >= $monto) {
-                            jsonResponse(['error' => 'El monto de retiro debe ser menor al monto de cierre de caja'], 400);
+
+                    if (count($retirosEntrada) > 20) {
+                        jsonResponse(['error' => 'No se pueden cargar más de 20 retiros en un mismo ingreso'], 400);
+                    }
+
+                    $totalRetiros = 0;
+                    foreach ($retirosEntrada as $i => $r) {
+                        $n = $i + 1;
+                        $montoR = isset($r['monto']) ? floatval($r['monto']) : 0;
+
+                        if ($montoR < 0) {
+                            jsonResponse(['error' => "El monto del retiro {$n} no puede ser negativo"], 400);
                         }
-                        if (empty($data['conceptoRetiroId'])) {
-                            jsonResponse(['error' => 'Debe seleccionar un concepto para el retiro'], 400);
+                        if ($montoR == 0) {
+                            continue; // fila vacía: se ignora
                         }
-                        $conceptoRetiro = validarConcepto($conn, $data['conceptoRetiroId']);
-                        if (!$conceptoRetiro) {
-                            jsonResponse(['error' => 'El concepto del retiro no existe o fue eliminado'], 400);
+                        if (empty($r['conceptoId'])) {
+                            jsonResponse(['error' => "Debe seleccionar un concepto para el retiro {$n}"], 400);
                         }
-                        if (isset($conceptoRetiro['requiere_colaborador']) && $conceptoRetiro['requiere_colaborador']) {
-                            jsonResponse(['error' => 'El concepto del retiro requiere un colaborador. Registre el retiro como egreso normal.'], 400);
+
+                        $conceptoR = validarConcepto($conn, $r['conceptoId']);
+                        if (!$conceptoR) {
+                            jsonResponse(['error' => "El concepto del retiro {$n} no existe o fue eliminado"], 400);
                         }
-                        // Si el concepto requiere sucursal, se reusa automáticamente la sucursal del ingreso padre
-                        $retiroConceptoId = $conceptoRetiro['id'];
-                        $retiroConceptoNombre = $conceptoRetiro['nombre'];
-                        $retiroObservacion = isset($data['observacionRetiro']) ? trim(substr($data['observacionRetiro'], 0, 255)) : null;
+                        if (!empty($conceptoR['requiere_colaborador'])) {
+                            jsonResponse(['error' => "El concepto '{$conceptoR['nombre']}' (retiro {$n}) requiere un colaborador. Registrelo como egreso normal."], 400);
+                        }
+
+                        $totalRetiros += $montoR;
+
+                        // Si el concepto requiere sucursal, se reusa la del ingreso padre
+                        $retirosValidados[] = [
+                            'monto' => round($montoR, 2),
+                            'concepto_id' => $conceptoR['id'],
+                            'concepto_nombre' => $conceptoR['nombre'],
+                            'observacion' => isset($r['observacion']) ? trim(substr($r['observacion'], 0, 255)) : null,
+                        ];
+                    }
+
+                    // La suma de TODOS los retiros no puede llegar al cierre de caja:
+                    // el ingreso físico real quedaría en cero o negativo.
+                    if ($totalRetiros > 0 && $totalRetiros >= $monto) {
+                        jsonResponse([
+                            'error' => 'La suma de los retiros ($' . number_format($totalRetiros, 2, ',', '.') .
+                                       ') debe ser menor al monto de cierre de caja ($' . number_format($monto, 2, ',', '.') . ')'
+                        ], 400);
                     }
                 }
 
@@ -415,28 +451,32 @@ try {
 
                 $insertId = $conn->lastInsertId();
 
-                // Si hay retiro, insertar egreso de caja vinculado al ingreso
-                // El egreso hereda automáticamente la sucursal del ingreso padre
-                if ($montoRetiro > 0) {
+                // Cada retiro se guarda como un egreso vinculado al ingreso.
+                // Heredan la fecha y la sucursal del ingreso padre.
+                if (!empty($retirosValidados)) {
                     try {
                         $stmtR = $conn->prepare("
                             INSERT INTO movimientos (fecha, tipo, sucursal_id, sucursal_nombre, concepto_id, concepto_nombre, monto, observacion, saldo, movimiento_padre_id, origen)
                             VALUES (:fecha, 'egreso', :sucursal_id, :sucursal_nombre, :concepto_id, :concepto_nombre, :monto, :observacion, 0, :padre_id, 'caja')
                         ");
-                        $stmtR->execute([
-                            ':fecha' => $fecha,
-                            ':sucursal_id' => $sucursalId,
-                            ':sucursal_nombre' => $sucursalNombre,
-                            ':concepto_id' => $retiroConceptoId,
-                            ':concepto_nombre' => $retiroConceptoNombre,
-                            ':monto' => $montoRetiro,
-                            ':observacion' => $retiroObservacion,
-                            ':padre_id' => $insertId
-                        ]);
+                        foreach ($retirosValidados as $r) {
+                            $stmtR->execute([
+                                ':fecha' => $fecha,
+                                ':sucursal_id' => $sucursalId,
+                                ':sucursal_nombre' => $sucursalNombre,
+                                ':concepto_id' => $r['concepto_id'],
+                                ':concepto_nombre' => $r['concepto_nombre'],
+                                ':monto' => $r['monto'],
+                                ':observacion' => $r['observacion'],
+                                ':padre_id' => $insertId
+                            ]);
+                        }
                     } catch (Exception $e) {
-                        // Si falla el egreso, revertir el ingreso para mantener consistencia
-                        $conn->prepare("DELETE FROM movimientos WHERE id = :id")->execute([':id' => $insertId]);
-                        jsonResponse(['error' => 'Error al registrar el retiro: ' . $e->getMessage()], 500);
+                        // Si falla algún retiro, se revierte TODO (el ingreso y los retiros
+                        // ya insertados) para no dejar un ingreso a medio cargar.
+                        $conn->prepare("DELETE FROM movimientos WHERE id = :id OR movimiento_padre_id = :padre_id")
+                             ->execute([':id' => $insertId, ':padre_id' => $insertId]);
+                        jsonResponse(['error' => 'Error al registrar los retiros: ' . $e->getMessage()], 500);
                     }
                 }
 
@@ -452,7 +492,8 @@ try {
                 jsonResponse([
                     'success' => true,
                     'id' => $insertId,
-                    'saldo' => $saldoActual
+                    'saldo' => $saldoActual,
+                    'retiros' => count($retirosValidados)
                 ]);
             }
             break;

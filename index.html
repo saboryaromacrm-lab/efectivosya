@@ -237,6 +237,54 @@
             border-color: var(--verde-medio);
         }
 
+        /* ==================== FILAS DE RETIRO DE CAJA ==================== */
+        .retiro-fila {
+            display: grid;
+            grid-template-columns: 140px minmax(160px, 1.2fr) minmax(160px, 1.5fr) auto;
+            gap: 8px;
+            align-items: start;
+            padding: 10px;
+            margin-bottom: 8px;
+            background: var(--blanco-humo);
+            border: 1px solid var(--gris-claro);
+            border-radius: 8px;
+        }
+        .retiro-fila input,
+        .retiro-fila select {
+            padding: 10px;
+            border: 2px solid var(--gris-claro);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .retiro-fila .sb-boton { padding: 10px; font-size: 0.95rem; }
+        .retiro-campo { display: flex; flex-direction: column; min-width: 0; }
+        .retiro-campo > span {
+            font-size: 0.72rem;
+            color: var(--gris-medio);
+            margin-bottom: 3px;
+        }
+        .retiro-quitar {
+            align-self: center;
+            margin-top: 14px;
+            background: none;
+            border: none;
+            color: var(--rojo);
+            font-size: 1.1rem;
+            cursor: pointer;
+            padding: 6px 8px;
+            line-height: 1;
+        }
+        .retiro-quitar:hover { background: #ffebee; border-radius: 6px; }
+
+        /* En pantallas angostas cada campo ocupa su propio renglón */
+        @media (max-width: 700px) {
+            .retiro-fila { grid-template-columns: 1fr auto; }
+            .retiro-fila .retiro-campo { grid-column: 1 / -1; }
+            .retiro-quitar { grid-column: 1 / -1; justify-self: end; margin-top: 0; }
+        }
+
         /* ==================== SELECT CON BUSCADOR ====================
            Envuelve un <select> nativo sin reemplazarlo: el select queda invisible
            pero PRESENTE y enfocable (opacity:0, nunca display:none), así siguen
@@ -1331,23 +1379,20 @@
                             <label id="labelMovMonto">Monto ($)</label>
                             <input type="number" id="movMonto" step="0.01" min="0.01" required placeholder="0.00">
                         </div>
-                        <div class="form-group" id="grupoMontoRetiro" style="display:none;">
-                            <label>Monto de Retiro ($) <span style="font-size:0.75rem;color:var(--gris-medio);">opcional</span></label>
-                            <input type="number" id="movMontoRetiro" step="0.01" min="0" placeholder="0.00">
+                        <!-- Retiros de caja: lista repetible. Cada fila genera un egreso
+                             vinculado al ingreso (movimiento_padre_id), igual que antes,
+                             pero ahora se pueden cargar varios de una sola vez. -->
+                        <div class="form-group" id="grupoRetiros" style="display:none;grid-column:1/-1;">
+                            <label>Retiros de Caja <span style="font-size:0.75rem;color:var(--gris-medio);font-weight:400;">opcional — podés agregar varios</span></label>
+                            <div id="listaRetiros"></div>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="agregarFilaRetiro()">+ Agregar retiro</button>
+                            </div>
                         </div>
-                        <div class="form-group" id="grupoConceptoRetiro" style="display:none;">
-                            <label>Concepto del Retiro *</label>
-                            <select id="movConceptoRetiro">
-                                <option value="">Seleccionar...</option>
-                            </select>
-                        </div>
-                        <div class="form-group" id="grupoObservacionRetiro" style="display:none;">
-                            <label>Observación del Retiro</label>
-                            <input type="text" id="movObservacionRetiro" maxlength="255" placeholder="Motivo del retiro...">
-                        </div>
-                        <div class="form-group" id="grupoIngresoReal" style="display:none;">
+                        <div class="form-group" id="grupoIngresoReal" style="display:none;grid-column:1/-1;">
                             <label style="color:var(--verde-oscuro);font-weight:600;">Ingreso Físico Real</label>
                             <div id="ingresoRealPreview" style="font-size:1.2rem;font-weight:700;color:var(--verde-medio);padding:10px;background:rgba(45,106,79,0.08);border-radius:6px;">$0.00</div>
+                            <div id="retirosResumen" style="font-size:0.8rem;color:var(--gris-medio);margin-top:4px;"></div>
                         </div>
                         <div class="form-group">
                             <label>Observación <span id="contadorObs" style="font-size:0.75rem;color:#636e72;">(0/255)</span></label>
@@ -2308,7 +2353,7 @@
 
             // Cambios en monto / retiro: actualizar preview de ingreso real
             document.getElementById('movMonto').addEventListener('input', actualizarCamposRetiro);
-            document.getElementById('movMontoRetiro').addEventListener('input', actualizarCamposRetiro);
+            // Las filas de retiro registran sus propios listeners al crearse
 
             // Chequeo de duplicado de ingreso: cuando cambia fecha o sucursal en el form de ingreso
             document.getElementById('movFecha').addEventListener('change', verificarIngresoDuplicado);
@@ -2377,8 +2422,7 @@
             const selectProveedor = document.getElementById('movProveedor');
             const selectSucursalEgreso = document.getElementById('movSucursalEgreso');
             const labelMovMonto = document.getElementById('labelMovMonto');
-            const grupoMontoRetiro = document.getElementById('grupoMontoRetiro');
-            const movMontoRetiro = document.getElementById('movMontoRetiro');
+            const grupoRetiros = document.getElementById('grupoRetiros');
 
             // Referencias a los grupos de reserva (pueden no existir en versiones viejas)
             const grupoReservaA = document.getElementById('grupoReservaAporte');
@@ -2394,7 +2438,7 @@
                 grupoColaborador.style.display = 'none';
                 grupoProveedor.style.display = 'none';
                 grupoSucursalEgreso.style.display = 'none';
-                grupoMontoRetiro.style.display = 'flex';
+                grupoRetiros.style.display = 'flex';
                 selectSucursal.required = true;
                 selectConcepto.required = false;
                 selectColaborador.required = false;
@@ -2424,14 +2468,9 @@
                 grupoColaborador.style.display = 'none';
                 grupoSucursalEgreso.style.display = 'none';
                 grupoProveedor.style.display = 'none';
-                grupoMontoRetiro.style.display = 'none';
-                document.getElementById('grupoConceptoRetiro').style.display = 'none';
-                document.getElementById('grupoObservacionRetiro').style.display = 'none';
+                grupoRetiros.style.display = 'none';
                 document.getElementById('grupoIngresoReal').style.display = 'none';
-                movMontoRetiro.value = '';
-                document.getElementById('movConceptoRetiro').value = '';
-                document.getElementById('movObservacionRetiro').value = '';
-                document.getElementById('movConceptoRetiro').required = false;
+                limpiarFilasRetiro();
                 selectSucursal.required = false;
                 selectConcepto.required = true;
                 selectColaborador.required = false;
@@ -2790,27 +2829,125 @@
             }
         }
 
-        function actualizarCamposRetiro() {
-            const montoRetiro = parseFloat(document.getElementById('movMontoRetiro').value) || 0;
-            const monto = parseFloat(document.getElementById('movMonto').value) || 0;
-            const grupoConceptoRetiro = document.getElementById('grupoConceptoRetiro');
-            const grupoObsRetiro = document.getElementById('grupoObservacionRetiro');
-            const grupoIngresoReal = document.getElementById('grupoIngresoReal');
-            const selectConceptoRetiro = document.getElementById('movConceptoRetiro');
+        // ==================== RETIROS DE CAJA (varios por ingreso) ====================
+        // Cada fila de retiro se convierte en un egreso vinculado al ingreso
+        // (movimiento_padre_id), y hereda su fecha y su sucursal.
+        let contadorFilasRetiro = 0;
 
-            if (montoRetiro > 0) {
-                grupoConceptoRetiro.style.display = 'flex';
-                grupoObsRetiro.style.display = 'flex';
-                grupoIngresoReal.style.display = 'flex';
-                selectConceptoRetiro.required = true;
-                const real = Math.max(0, monto - montoRetiro);
-                document.getElementById('ingresoRealPreview').textContent = formatearMonto(real);
-            } else {
-                grupoConceptoRetiro.style.display = 'none';
-                grupoObsRetiro.style.display = 'none';
-                grupoIngresoReal.style.display = 'none';
-                selectConceptoRetiro.required = false;
+        function agregarFilaRetiro(datosIniciales) {
+            const lista = document.getElementById('listaRetiros');
+            const idx = ++contadorFilasRetiro;
+
+            const fila = document.createElement('div');
+            fila.className = 'retiro-fila';
+            fila.dataset.idx = idx;
+            fila.innerHTML = `
+                <div class="retiro-campo">
+                    <span>Monto ($) *</span>
+                    <input type="number" class="retiro-monto" step="0.01" min="0" placeholder="0.00">
+                </div>
+                <div class="retiro-campo">
+                    <span>Concepto *</span>
+                    <select class="retiro-concepto" id="retiroConcepto_${idx}">
+                        <option value="">Seleccionar...</option>
+                    </select>
+                </div>
+                <div class="retiro-campo">
+                    <span>Observación</span>
+                    <input type="text" class="retiro-obs" maxlength="255" placeholder="Motivo del retiro...">
+                </div>
+                <button type="button" class="retiro-quitar" title="Quitar este retiro" onclick="quitarFilaRetiro(this)">✕</button>
+            `;
+            lista.appendChild(fila);
+
+            const select = fila.querySelector('.retiro-concepto');
+            poblarConceptosRetiro(select);
+            if (datosIniciales) {
+                fila.querySelector('.retiro-monto').value = datosIniciales.monto || '';
+                fila.querySelector('.retiro-obs').value = datosIniciales.observacion || '';
+                select.value = datosIniciales.conceptoId || '';
             }
+
+            // El select se creó recién: hay que convertirlo para que tenga buscador
+            hacerSelectBuscable(select);
+
+            fila.querySelector('.retiro-monto').addEventListener('input', actualizarCamposRetiro);
+            select.addEventListener('change', actualizarCamposRetiro);
+            actualizarCamposRetiro();
+            return fila;
+        }
+
+        function quitarFilaRetiro(boton) {
+            const fila = boton.closest('.retiro-fila');
+            // El panel del select con buscador vive en <body>: hay que sacarlo a mano,
+            // si no queda huérfano en el DOM cada vez que se borra una fila.
+            const sel = fila.querySelector('.retiro-concepto');
+            if (sel && sel._sb) { sel._sb.cerrar(); sel._sb.panel.remove(); }
+            fila.remove();
+            actualizarCamposRetiro();
+        }
+
+        // Carga los conceptos disponibles en un select de retiro, conservando lo elegido
+        function poblarConceptosRetiro(select) {
+            const valorActual = select.value;
+            select.innerHTML = '<option value="">Seleccionar...</option>';
+            datos.conceptos.forEach(c => {
+                // Los conceptos que exigen colaborador no sirven acá: el retiro de caja
+                // no tiene dónde cargarlo. El backend también los rechaza.
+                if (conceptoRequiere(c, 'requiere_colaborador')) return;
+                select.innerHTML += `<option value="${c.id}">${c.nombre}</option>`;
+            });
+            select.value = valorActual;
+        }
+
+        // Devuelve las filas de retiro con algo cargado, más las que están a medio llenar
+        function leerFilasRetiro() {
+            return Array.from(document.querySelectorAll('#listaRetiros .retiro-fila')).map(fila => ({
+                fila,
+                monto: parseFloat(fila.querySelector('.retiro-monto').value) || 0,
+                montoTexto: fila.querySelector('.retiro-monto').value.trim(),
+                conceptoId: fila.querySelector('.retiro-concepto').value,
+                observacion: fila.querySelector('.retiro-obs').value
+            }));
+        }
+
+        function actualizarCamposRetiro() {
+            const monto = parseFloat(document.getElementById('movMonto').value) || 0;
+            const grupoIngresoReal = document.getElementById('grupoIngresoReal');
+            const filas = leerFilasRetiro();
+            const conMonto = filas.filter(f => f.monto > 0);
+            const totalRetiros = conMonto.reduce((s, f) => s + f.monto, 0);
+
+            // Cada fila con monto exige concepto
+            filas.forEach(f => {
+                const sel = f.fila.querySelector('.retiro-concepto');
+                sel.required = f.monto > 0;
+            });
+
+            if (totalRetiros > 0) {
+                grupoIngresoReal.style.display = 'flex';
+                const real = monto - totalRetiros;
+                const preview = document.getElementById('ingresoRealPreview');
+                preview.textContent = formatearMonto(Math.max(0, real));
+                // Aviso en vivo si los retiros se pasan del cierre de caja
+                const excede = monto > 0 && totalRetiros >= monto;
+                preview.style.color = excede ? 'var(--rojo)' : 'var(--verde-medio)';
+                document.getElementById('retirosResumen').textContent = excede
+                    ? `⚠️ ${conMonto.length} retiro${conMonto.length !== 1 ? 's' : ''} por ${formatearMonto(totalRetiros)} — supera el cierre de caja`
+                    : `${conMonto.length} retiro${conMonto.length !== 1 ? 's' : ''} por ${formatearMonto(totalRetiros)}`;
+            } else {
+                grupoIngresoReal.style.display = 'none';
+                document.getElementById('retirosResumen').textContent = '';
+            }
+        }
+
+        // Deja la lista de retiros vacía (al cambiar de tipo o después de registrar)
+        function limpiarFilasRetiro() {
+            document.querySelectorAll('#listaRetiros .retiro-concepto').forEach(sel => {
+                if (sel._sb) { sel._sb.cerrar(); sel._sb.panel.remove(); }
+            });
+            document.getElementById('listaRetiros').innerHTML = '';
+            actualizarCamposRetiro();
         }
 
         // Helper: determina si un concepto tiene un flag activo
@@ -2945,20 +3082,34 @@
                     mostrarToast('Seleccione una sucursal', 'error');
                     return;
                 }
-                // Validar datos de retiro si el usuario ingresó monto de retiro
-                const montoRetiroInput = document.getElementById('movMontoRetiro').value;
-                const montoRetiro = parseFloat(montoRetiroInput) || 0;
-                if (montoRetiro > 0) {
-                    const montoCierre = parseFloat(montoInput) || 0;
-                    if (montoRetiro >= montoCierre) {
-                        mostrarToast('El retiro debe ser menor al monto de cierre de caja', 'error');
+                // Validar las filas de retiro
+                const filasRetiro = leerFilasRetiro();
+                const montoCierre = parseFloat(montoInput) || 0;
+
+                for (let i = 0; i < filasRetiro.length; i++) {
+                    const f = filasRetiro[i];
+                    const n = i + 1;
+                    // Fila totalmente vacía: se ignora, no molesta al usuario
+                    if (!f.montoTexto && !f.conceptoId && !f.observacion.trim()) continue;
+
+                    if (f.monto <= 0) {
+                        mostrarToast(`El retiro ${n} necesita un monto mayor a cero`, 'error');
+                        f.fila.querySelector('.retiro-monto').focus();
                         return;
                     }
-                    const conceptoRetiroId = document.getElementById('movConceptoRetiro').value;
-                    if (!conceptoRetiroId) {
-                        mostrarToast('Seleccione un concepto para el retiro', 'error');
+                    if (!f.conceptoId) {
+                        mostrarToast(`Seleccione el concepto del retiro ${n}`, 'error');
                         return;
                     }
+                }
+
+                const totalRetiros = filasRetiro.reduce((s, f) => s + (f.monto > 0 ? f.monto : 0), 0);
+                if (totalRetiros > 0 && totalRetiros >= montoCierre) {
+                    mostrarToast(
+                        `La suma de los retiros (${formatearMonto(totalRetiros)}) debe ser menor al cierre de caja (${formatearMonto(montoCierre)})`,
+                        'error'
+                    );
+                    return;
                 }
             } else {
                 const conceptoId = document.getElementById('movConcepto').value;
@@ -3018,16 +3169,19 @@
                 body.sucursalId = sucursalId;
                 body.sucursalNombre = sucursal ? sucursal.nombre : '';
 
-                // Campos de retiro (egreso directo de caja)
-                const montoRetiro = parseFloat(document.getElementById('movMontoRetiro').value) || 0;
-                if (montoRetiro > 0) {
-                    body.montoRetiro = Math.round(montoRetiro * 100) / 100;
-                    const conceptoRetiroId = parseInt(document.getElementById('movConceptoRetiro').value);
-                    const conceptoRetiro = datos.conceptos.find(c => c.id == conceptoRetiroId);
-                    body.conceptoRetiroId = conceptoRetiroId;
-                    body.conceptoRetiroNombre = conceptoRetiro ? conceptoRetiro.nombre : '';
-                    body.observacionRetiro = document.getElementById('movObservacionRetiro').value;
-                }
+                // Retiros de caja: cada uno genera un egreso vinculado a este ingreso
+                const retiros = leerFilasRetiro()
+                    .filter(f => f.monto > 0 && f.conceptoId)
+                    .map(f => {
+                        const c = datos.conceptos.find(x => x.id == f.conceptoId);
+                        return {
+                            monto: Math.round(f.monto * 100) / 100,
+                            conceptoId: parseInt(f.conceptoId),
+                            conceptoNombre: c ? c.nombre : '',
+                            observacion: f.observacion
+                        };
+                    });
+                if (retiros.length) body.retiros = retiros;
             } else {
                 const conceptoId = parseInt(document.getElementById('movConcepto').value);
                 const concepto = datos.conceptos.find(c => c.id == conceptoId);
@@ -3109,8 +3263,10 @@
                     // Recargar reservas (los saldos cambiaron) y refrescar selects
                     await recargarReservas();
 
-                    // Limpiar formulario
+                    // Limpiar formulario. form.reset() no borra las filas de retiro
+                    // porque se crean por JS, así que se vacían a mano.
                     document.getElementById('formMovimiento').reset();
+                    limpiarFilasRetiro();
                     setFechaHoy();
                     actualizarContadorObs();
                     // Re-aplicar lógica de visibilidad según el tipo activo (oculta campos que no corresponden)
@@ -3122,7 +3278,13 @@
                         renderSeccionReservas();
                     }
 
-                    mostrarToast('Movimiento registrado correctamente', 'success');
+                    const nRet = result.retiros || 0;
+                    mostrarToast(
+                        nRet > 0
+                            ? `Movimiento registrado con ${nRet} retiro${nRet !== 1 ? 's' : ''} de caja`
+                            : 'Movimiento registrado correctamente',
+                        'success'
+                    );
                 } else {
                     mostrarToast(result.error || 'Error al registrar', 'error');
                     // Reset timestamp para permitir reintento inmediato si hubo error del servidor
@@ -3161,7 +3323,7 @@
             });
 
             // Conceptos
-            const selectsConcepto = ['movConcepto', 'egrConcepto', 'editConcepto', 'movConceptoRetiro', 'repConceptoEgreso'];
+            const selectsConcepto = ['movConcepto', 'egrConcepto', 'editConcepto', 'repConceptoEgreso'];
             selectsConcepto.forEach(id => {
                 const select = document.getElementById(id);
                 if (select) {
@@ -3176,6 +3338,10 @@
                     select.value = valorActual;
                 }
             });
+
+            // Los selects de las filas de retiro son dinámicos: se repueblan aparte
+            // para que un concepto recién creado aparezca también ahí.
+            document.querySelectorAll('#listaRetiros .retiro-concepto').forEach(poblarConceptosRetiro);
 
             // Colaboradores
             const selectsColaborador = ['movColaborador', 'editColaborador', 'egrColaborador'];
