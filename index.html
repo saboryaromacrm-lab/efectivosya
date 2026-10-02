@@ -237,6 +237,117 @@
             border-color: var(--verde-medio);
         }
 
+        /* ==================== ARQUEO DE CAJA ==================== */
+        .btn-arqueo {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            color: #fff;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            align-self: stretch;
+            transition: background 0.2s;
+        }
+        .btn-arqueo:hover { background: rgba(255, 255, 255, 0.28); }
+
+        .modal-arqueo { max-width: 520px; }
+
+        .arqueo-sistema,
+        .arqueo-total {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: var(--blanco-humo);
+        }
+        .arqueo-sistema strong,
+        .arqueo-total strong { font-size: 1.15rem; }
+        .arqueo-total { margin-top: 10px; background: #eaf4ee; }
+
+        .arqueo-ayuda {
+            font-size: 0.8rem;
+            color: var(--gris-medio);
+            margin: 10px 0 6px;
+        }
+
+        .arqueo-billetes {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 14px;
+        }
+
+        .arqueo-fila {
+            display: grid;
+            grid-template-columns: 70px 1fr auto;
+            align-items: center;
+            gap: 8px;
+        }
+        .arqueo-fila label {
+            font-weight: 700;
+            font-size: 0.9rem;
+            text-align: right;
+        }
+        .arqueo-fila input {
+            padding: 8px 10px;
+            border: 2px solid var(--gris-claro);
+            border-radius: 8px;
+            font-size: 1rem;
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+        .arqueo-fila input:focus { outline: none; border-color: var(--verde-medio); }
+        .arqueo-fila span {
+            font-size: 0.75rem;
+            color: var(--gris-medio);
+            min-width: 70px;
+            text-align: right;
+            white-space: nowrap;
+        }
+        .arqueo-otros {
+            margin-top: 8px;
+            grid-template-columns: 150px 1fr auto;
+        }
+
+        .arqueo-diferencia {
+            margin-top: 10px;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.05rem;
+            background: var(--blanco-humo);
+            color: var(--gris-medio);
+        }
+        .arqueo-diferencia.cuadra   { background: #e8f5e9; color: #2e7d32; }
+        .arqueo-diferencia.sobrante { background: #e3f2fd; color: #1565c0; }
+        .arqueo-diferencia.faltante { background: #ffebee; color: #c62828; }
+        .arqueo-diferencia small { display: block; font-weight: 400; font-size: 0.78rem; margin-top: 3px; }
+
+        .arqueo-historial { margin-top: 14px; font-size: 0.85rem; }
+        .arqueo-historial summary { cursor: pointer; color: var(--verde-oscuro); font-weight: 600; }
+        .arqueo-hist-item {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--gris-claro);
+        }
+
+        .badge-ajuste {
+            display: inline-block;
+            background: #ede7f6;
+            color: #5e35b1;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 10px;
+            white-space: nowrap;
+        }
+
         /* ==================== FILAS DE RETIRO DE CAJA ==================== */
         .retiro-fila {
             display: grid;
@@ -896,6 +1007,17 @@
                 white-space: nowrap;
             }
 
+            /* En el celular el botón de arqueo queda sólo con el ícono,
+               para no empujar los saldos fuera de la línea del encabezado. */
+            .btn-arqueo {
+                padding: 4px 9px;
+                font-size: 1.05rem;
+                flex-shrink: 0;
+            }
+            .btn-arqueo-texto { display: none; }
+
+            .arqueo-billetes { grid-template-columns: 1fr; }
+
             /* Navegación: 6 secciones no entran en una fila de 375px — "Configuración"
                quedaba fuera de pantalla y sin ninguna señal de que se podía deslizar.
                Se pasa a dos filas de tres, así todas quedan visibles y con buen
@@ -1251,6 +1373,7 @@
                     <div class="saldo-label">Saldo Actual</div>
                     <div class="saldo-valor positivo" id="saldoActual">$0</div>
                 </div>
+                <button type="button" class="btn-arqueo" onclick="abrirArqueo()" title="Contar los billetes, ver la diferencia con el sistema y ajustar la caja">🧮<span class="btn-arqueo-texto"> Arqueo</span></button>
             </div>
         </div>
     </header>
@@ -2012,6 +2135,53 @@
             </div>
         </section>
     </main>
+
+    <!-- ==================== MODAL: ARQUEO / AJUSTE DE CAJA ==================== -->
+    <div class="modal-overlay" id="modalArqueo">
+        <div class="modal modal-arqueo">
+            <div class="modal-header">
+                <h3 class="modal-titulo">🧮 Arqueo de Caja</h3>
+                <button class="modal-close" onclick="cerrarArqueo()">&times;</button>
+            </div>
+
+            <div class="arqueo-sistema">
+                <span>Saldo en el sistema</span>
+                <strong id="arqueoSaldoSistema">-</strong>
+            </div>
+
+            <p class="arqueo-ayuda">Cargá cuántos billetes de cada valor tenés. El total se suma solo.</p>
+
+            <div id="arqueoBilletes" class="arqueo-billetes"></div>
+
+            <div class="arqueo-fila arqueo-otros">
+                <label for="arqueoOtros">Monedas / otros ($)</label>
+                <input type="number" id="arqueoOtros" min="0" step="0.01" inputmode="decimal" placeholder="0">
+                <span></span>
+            </div>
+
+            <div class="arqueo-total">
+                <span>Total contado</span>
+                <strong id="arqueoTotal">$ 0,00</strong>
+            </div>
+
+            <div id="arqueoDiferencia" class="arqueo-diferencia">Cargá los billetes para ver la diferencia</div>
+
+            <div class="form-group" style="margin-top:12px;">
+                <label for="arqueoObservacion">Observación <span id="arqueoObsReq" style="color:var(--rojo);display:none;">* obligatoria para ajustar</span></label>
+                <input type="text" id="arqueoObservacion" maxlength="255" placeholder="Ej: control de cierre, faltante sin justificar...">
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="cerrarArqueo()">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnRegistrarArqueo" onclick="registrarArqueo()">Registrar control</button>
+            </div>
+
+            <details class="arqueo-historial">
+                <summary>Últimos arqueos</summary>
+                <div id="arqueoHistorial">Cargando...</div>
+            </details>
+        </div>
+    </div>
 
     <div class="modal-overlay" id="modalEditar">
         <div class="modal">
@@ -3559,16 +3729,16 @@
 
             tbody.innerHTML = ultimos.map(mov => {
                 const esCaja = mov.origen === 'caja';
-                const badge = esCaja ? ' <span class="badge-caja">💰 Directo de caja</span>' : '';
+                const badge = badgeOrigen(mov);
                 return `
                 <tr>
                     <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                     <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
-                    <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
-                    <td data-label="Concepto">${(mov.concepto_nombre || '')}${badge}</td>
-                    <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
-                    <td data-label="Proveedor">${mov.proveedor_nombre || ''}</td>
-                    <td data-label="Observación">${mov.observacion || ''}</td>
+                    <td data-label="Sucursal">${escHtml(mov.sucursal_nombre)}</td>
+                    <td data-label="Concepto">${escHtml(mov.concepto_nombre)}${badge}</td>
+                    <td data-label="Colaborador">${escHtml(mov.colaborador_nombre)}</td>
+                    <td data-label="Proveedor">${escHtml(mov.proveedor_nombre)}</td>
+                    <td data-label="Observación">${escHtml(mov.observacion)}</td>
                     <td data-label="Ingreso" class="monto-ingreso">${mov.tipo === 'ingreso' ? formatearMonto(mov.monto) : ''}</td>
                     <td data-label="Egreso" class="monto-egreso">${mov.tipo === 'egreso' ? formatearMonto(mov.monto) : ''}</td>
                     <td data-label="Saldo">${formatearMonto(mov.saldo_carga ?? mov.saldo)}</td>
@@ -3656,8 +3826,8 @@
                     <tr>
                         <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
-                        <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
-                        <td data-label="Observación">${mov.observacion || ''}</td>
+                        <td data-label="Sucursal">${escHtml(mov.sucursal_nombre) || (mov.origen === 'ajuste' ? '<span class="badge-ajuste">⚖️ Ajuste de caja</span>' : '')}</td>
+                        <td data-label="Observación">${escHtml(mov.observacion)}</td>
                         <td data-label="Monto" class="monto-ingreso">${formatearMonto(mov.monto)}</td>
                         <td class="acciones-cell">
                             <button class="btn btn-sm btn-secondary" onclick="abrirEditar(${mov.id})">✏️</button>
@@ -3800,15 +3970,15 @@
 
                 tbody.innerHTML = movimientos.map(mov => {
                     const esCaja = mov.origen === 'caja';
-                    const badge = esCaja ? ' <span class="badge-caja">💰 Directo de caja</span>' : '';
+                    const badge = badgeOrigen(mov);
                     return `
                     <tr>
                         <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
-                        <td data-label="Concepto">${(mov.concepto_nombre || '')}${badge}</td>
-                        <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
-                        <td data-label="Proveedor">${mov.proveedor_nombre || ''}</td>
-                        <td data-label="Observación">${mov.observacion || ''}</td>
+                        <td data-label="Concepto">${escHtml(mov.concepto_nombre)}${badge}</td>
+                        <td data-label="Colaborador">${escHtml(mov.colaborador_nombre)}</td>
+                        <td data-label="Proveedor">${escHtml(mov.proveedor_nombre)}</td>
+                        <td data-label="Observación">${escHtml(mov.observacion)}</td>
                         <td data-label="Monto" class="monto-egreso">${formatearMonto(mov.monto)}</td>
                         <td class="acciones-cell">
                             <button class="btn btn-sm btn-secondary" onclick="abrirEditar(${mov.id})">✏️</button>
@@ -4409,6 +4579,233 @@
             sb.boton.focus();
             sb.boton.scrollIntoView({ block: 'center', behavior: 'smooth' });
         }, true);
+
+        // ==================== ARQUEO / AJUSTE DE CAJA ====================
+        // Billetes en circulación, de mayor a menor. Para agregar o sacar uno,
+        // sólo hay que tocar esta lista.
+        const BILLETES_ARS = [20000, 10000, 2000, 1000, 500, 200, 100, 50, 20, 10];
+
+        // Todo se cuenta en centavos enteros, para no arrastrar errores de punto flotante
+        let arqueoSaldoCent = null;  // saldo del sistema contra el que se está contando
+        let arqueoTocado = false;    // si el usuario ya cargó algo
+        let registrandoArqueo = false;
+
+        const centAPesos = c => formatearMonto(c / 100);
+
+        function escHtml(t) {
+            return String(t ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        async function abrirArqueo() {
+            const cont = document.getElementById('arqueoBilletes');
+            cont.innerHTML = BILLETES_ARS.map(den => `
+                <div class="arqueo-fila">
+                    <label for="arqueoBillete_${den}">$${den.toLocaleString('es-AR')}</label>
+                    <input type="number" id="arqueoBillete_${den}" class="arqueo-cant" data-den="${den}"
+                           min="0" step="1" inputmode="numeric" placeholder="0">
+                    <span id="arqueoSub_${den}"></span>
+                </div>`).join('');
+            cont.querySelectorAll('.arqueo-cant').forEach(i => i.addEventListener('input', () => { arqueoTocado = true; calcularArqueo(); }));
+
+            const otros = document.getElementById('arqueoOtros');
+            otros.value = '';
+            otros.oninput = () => { arqueoTocado = true; calcularArqueo(); };
+            document.getElementById('arqueoObservacion').value = '';
+            arqueoTocado = false;
+
+            document.getElementById('modalArqueo').classList.add('active');
+            await refrescarSaldoArqueo();
+            calcularArqueo();
+            cargarHistorialArqueos();
+            const primero = cont.querySelector('.arqueo-cant');
+            if (primero) primero.focus();
+        }
+
+        function cerrarArqueo() {
+            document.getElementById('modalArqueo').classList.remove('active');
+        }
+
+        // Se trae el saldo del servidor en el momento, no el del encabezado:
+        // puede haber quedado viejo si otra persona cargó algo.
+        async function refrescarSaldoArqueo() {
+            const el = document.getElementById('arqueoSaldoSistema');
+            el.textContent = 'Cargando...';
+            try {
+                const r = await fetch(`${API_URL}?action=saldo`, { cache: 'no-store' });
+                const d = await r.json();
+                arqueoSaldoCent = Math.round((d.saldo || 0) * 100);
+                el.textContent = centAPesos(arqueoSaldoCent);
+            } catch (e) {
+                arqueoSaldoCent = null;
+                el.textContent = 'Error al leer el saldo';
+            }
+        }
+
+        // Devuelve { totalCent, difCent, detalle, otros }
+        function leerArqueo() {
+            let totalCent = 0;
+            const detalle = [];
+            document.querySelectorAll('#arqueoBilletes .arqueo-cant').forEach(i => {
+                const den = parseInt(i.dataset.den);
+                const cant = Math.max(0, parseInt(i.value) || 0);
+                const sub = den * cant * 100;
+                totalCent += sub;
+                const span = document.getElementById('arqueoSub_' + den);
+                if (span) span.textContent = cant ? centAPesos(sub) : '';
+                if (cant) detalle.push({ denominacion: den, cantidad: cant });
+            });
+            const otros = Math.max(0, parseFloat(document.getElementById('arqueoOtros').value) || 0);
+            totalCent += Math.round(otros * 100);
+            const difCent = arqueoSaldoCent === null ? null : totalCent - arqueoSaldoCent;
+            return { totalCent, difCent, detalle, otros };
+        }
+
+        function calcularArqueo() {
+            const { totalCent, difCent } = leerArqueo();
+            document.getElementById('arqueoTotal').textContent = centAPesos(totalCent);
+
+            const caja = document.getElementById('arqueoDiferencia');
+            const btn = document.getElementById('btnRegistrarArqueo');
+            const req = document.getElementById('arqueoObsReq');
+            caja.className = 'arqueo-diferencia';
+
+            if (difCent === null) {
+                caja.textContent = 'No se pudo leer el saldo del sistema';
+                btn.disabled = true;
+                return;
+            }
+            if (!arqueoTocado) {
+                caja.textContent = 'Cargá los billetes para ver la diferencia';
+                btn.disabled = true;
+                btn.textContent = 'Registrar control';
+                req.style.display = 'none';
+                return;
+            }
+
+            btn.disabled = false;
+            if (difCent === 0) {
+                caja.classList.add('cuadra');
+                caja.innerHTML = '✓ La caja cuadra<small>Lo contado coincide con el sistema</small>';
+                btn.textContent = 'Registrar control';
+                req.style.display = 'none';
+            } else if (difCent > 0) {
+                caja.classList.add('sobrante');
+                caja.innerHTML = `Sobrante: ${centAPesos(difCent)}<small>Hay más plata que en el sistema. El ajuste se registra como ingreso.</small>`;
+                btn.textContent = `Ajustar sobrante de ${centAPesos(difCent)}`;
+                req.style.display = 'inline';
+            } else {
+                caja.classList.add('faltante');
+                caja.innerHTML = `Faltante: ${centAPesos(-difCent)}<small>Hay menos plata que en el sistema. El ajuste se registra como egreso.</small>`;
+                btn.textContent = `Ajustar faltante de ${centAPesos(-difCent)}`;
+                req.style.display = 'inline';
+            }
+        }
+
+        async function registrarArqueo() {
+            if (registrandoArqueo) return;
+            const { totalCent, difCent, detalle, otros } = leerArqueo();
+            if (difCent === null || !arqueoTocado) return;
+
+            const obsInput = document.getElementById('arqueoObservacion');
+            const observacion = obsInput.value.trim();
+            if (difCent !== 0 && !observacion) {
+                mostrarToast('Escribí una observación para registrar el ajuste', 'error');
+                obsInput.focus();
+                return;
+            }
+            if (difCent !== 0) {
+                const tipo = difCent > 0 ? 'un INGRESO por sobrante' : 'un EGRESO por faltante';
+                if (!confirm(`Se va a registrar ${tipo} de ${centAPesos(Math.abs(difCent))} y la caja va a quedar en ${centAPesos(totalCent)}.\n\n¿Confirmás el ajuste?`)) return;
+            }
+
+            const btn = document.getElementById('btnRegistrarArqueo');
+            const textoBtn = btn.textContent;
+            registrandoArqueo = true;
+            btn.disabled = true;
+            btn.textContent = 'Registrando...';
+
+            try {
+                const r = await fetch(`${API_URL}?action=ajuste-caja`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        totalContado: totalCent / 100,
+                        saldoEsperado: arqueoSaldoCent / 100,
+                        observacion,
+                        detalle,
+                        otros
+                    })
+                });
+                const res = await r.json();
+
+                if (r.status === 409 && res.saldoActual !== undefined) {
+                    // El saldo cambió mientras se contaba: se muestra el nuevo y se recalcula
+                    arqueoSaldoCent = Math.round(res.saldoActual * 100);
+                    document.getElementById('arqueoSaldoSistema').textContent = centAPesos(arqueoSaldoCent);
+                    calcularArqueo();
+                    mostrarToast(res.error, 'error');
+                    return;
+                }
+                if (!res.success) {
+                    mostrarToast(res.error || 'No se pudo registrar el arqueo', 'error');
+                    return;
+                }
+
+                cerrarArqueo();
+                mostrarToast(res.ajustado
+                    ? `Ajuste registrado. Saldo de caja: ${formatearMonto(res.saldo)}`
+                    : 'Control registrado: la caja cuadra', 'success');
+
+                if (res.ajustado) {
+                    actualizarSaldoHeader();
+                    await cargarUltimosMovimientos();
+                    const seccion = document.querySelector('.seccion.active');
+                    if (seccion && seccion.id === 'ingresos') cargarReporteIngresos();
+                    else if (seccion && seccion.id === 'egresos') cargarReporteEgresos();
+                    else if (seccion && seccion.id === 'reportes') cargarReporteGeneral();
+                }
+            } catch (e) {
+                console.error('Error registrando arqueo:', e);
+                mostrarToast('Error de conexión', 'error');
+            } finally {
+                registrandoArqueo = false;
+                btn.disabled = false;
+                btn.textContent = textoBtn;
+            }
+        }
+
+        async function cargarHistorialArqueos() {
+            const cont = document.getElementById('arqueoHistorial');
+            try {
+                const r = await fetch(`${API_URL}?action=ajuste-caja&limit=10`, { cache: 'no-store' });
+                const lista = await r.json();
+                if (!Array.isArray(lista) || !lista.length) {
+                    cont.innerHTML = '<div style="padding:6px 0;color:var(--gris-medio);">Todavía no hay arqueos registrados.</div>';
+                    return;
+                }
+                cont.innerHTML = lista.map(a => {
+                    const dif = Math.round(parseFloat(a.diferencia) * 100);
+                    const estado = dif === 0
+                        ? '<span style="color:#2e7d32;">✓ cuadró</span>'
+                        : dif > 0
+                            ? `<span style="color:#1565c0;">sobrante ${centAPesos(dif)}</span>`
+                            : `<span style="color:#c62828;">faltante ${centAPesos(-dif)}</span>`;
+                    return `<div class="arqueo-hist-item">
+                        <span>${formatearAsentamiento(a.created_at)}<br><small style="color:var(--gris-medio);">${escHtml(a.observacion || '')}</small></span>
+                        <span style="text-align:right;">${centAPesos(Math.round(parseFloat(a.total_contado) * 100))}<br><small>${estado}</small></span>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                cont.textContent = 'No se pudo cargar el historial';
+            }
+        }
+
+        // Marca visual del origen de un movimiento (retiro de caja o ajuste de arqueo)
+        function badgeOrigen(mov) {
+            if (mov.origen === 'caja') return ' <span class="badge-caja">💰 Directo de caja</span>';
+            if (mov.origen === 'ajuste') return ' <span class="badge-ajuste">⚖️ Ajuste</span>';
+            return '';
+        }
 
         // ==================== ALTA RÁPIDA DE PROVEEDOR (desde el formulario) ====================
         // Valor centinela de la opción "➕ Agregar proveedor nuevo..." dentro del select.
@@ -5329,8 +5726,8 @@
                         <td data-label="Fecha Mov.">${celdaFechaMov(m)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(m.created_at)}</td>
                         <td data-label="Acción">${tipoTag}</td>
-                        <td data-label="Concepto">${m.concepto_nombre || ''}</td>
-                        <td data-label="Observación">${m.observacion || ''}</td>
+                        <td data-label="Concepto">${escHtml(m.concepto_nombre)}</td>
+                        <td data-label="Observación">${escHtml(m.observacion)}</td>
                         <td data-label="Aporte" class="monto-ingreso">${esAporte ? formatearMonto(parseFloat(m.monto)) : ''}</td>
                         <td data-label="Gasto" class="monto-egreso">${!esAporte ? formatearMonto(parseFloat(m.monto)) : ''}</td>
                         <td data-label="Saldo Acumulado" style="font-weight:600;">${formatearMonto(saldosAcum[m.id] || 0)}</td>
@@ -5567,7 +5964,7 @@
                     const monto = parseFloat(mov.monto);
                     if (esIngreso) totalIng += monto; else totalEgr += monto;
                     const esCaja = mov.origen === 'caja';
-                    const badgeCaja = esCaja ? ' <span class="badge-caja">💰 Caja</span>' : '';
+                    const badgeCaja = esCaja ? ' <span class="badge-caja">💰 Caja</span>' : (mov.origen === 'ajuste' ? ' <span class="badge-ajuste">⚖️ Ajuste</span>' : '');
                     const tipoTag = esIngreso
                         ? '<span style="color:var(--verde-medio);font-weight:600;">Ingreso</span>'
                         : '<span style="color:var(--rojo);font-weight:600;">Egreso</span>';
@@ -5576,11 +5973,11 @@
                         <td data-label="Fecha Mov.">${celdaFechaMov(mov)}</td>
                         <td data-label="Asentamiento" style="white-space:nowrap;">${celdaAsentamiento(mov.created_at)}</td>
                         <td data-label="Tipo">${tipoTag}${badgeCaja}</td>
-                        <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
-                        <td data-label="Concepto">${mov.concepto_nombre || ''}</td>
-                        <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
-                        <td data-label="Proveedor">${mov.proveedor_nombre || ''}</td>
-                        <td data-label="Observación">${mov.observacion || ''}</td>
+                        <td data-label="Sucursal">${escHtml(mov.sucursal_nombre)}</td>
+                        <td data-label="Concepto">${escHtml(mov.concepto_nombre)}</td>
+                        <td data-label="Colaborador">${escHtml(mov.colaborador_nombre)}</td>
+                        <td data-label="Proveedor">${escHtml(mov.proveedor_nombre)}</td>
+                        <td data-label="Observación">${escHtml(mov.observacion)}</td>
                         <td data-label="Ingreso" class="monto-ingreso">${esIngreso ? formatearMonto(monto) : ''}</td>
                         <td data-label="Egreso" class="monto-egreso">${!esIngreso ? formatearMonto(monto) : ''}</td>
                     </tr>`;
@@ -5657,13 +6054,13 @@
 
                 tbody.innerHTML = movimientos.map(mov => {
                     const esCaja = mov.origen === 'caja';
-                    const badge = esCaja ? ' <span class="badge-caja">💰 Directo de caja</span>' : '';
+                    const badge = badgeOrigen(mov);
                     return `
                     <tr>
                         <td data-label="Fecha">${formatearFecha(mov.fecha)}${badge}</td>
-                        <td data-label="Sucursal">${mov.sucursal_nombre || ''}</td>
-                        <td data-label="Colaborador">${mov.colaborador_nombre || ''}</td>
-                        <td data-label="Observación">${mov.observacion || ''}</td>
+                        <td data-label="Sucursal">${escHtml(mov.sucursal_nombre)}</td>
+                        <td data-label="Colaborador">${escHtml(mov.colaborador_nombre)}</td>
+                        <td data-label="Observación">${escHtml(mov.observacion)}</td>
                         <td data-label="Monto" class="monto-egreso">${formatearMonto(mov.monto)}</td>
                     </tr>`;
                 }).join('');
@@ -6521,7 +6918,7 @@
                     m.proveedor_nombre || '',
                     m.reserva_nombre || '',
                     m.reserva_accion || '',
-                    m.origen === 'caja' ? 'Directo de caja' : 'Normal',
+                    m.origen === 'caja' ? 'Directo de caja' : (m.origen === 'ajuste' ? 'Ajuste de arqueo' : 'Normal'),
                     m.observacion || '',
                     montoCSV(m.monto)
                 ]);
@@ -6594,7 +6991,7 @@
                         m.proveedor_nombre || '',
                         m.reserva_nombre || '',
                         m.reserva_accion || '',
-                        m.origen === 'caja' ? 'Directo de caja' : 'Normal',
+                        m.origen === 'caja' ? 'Directo de caja' : (m.origen === 'ajuste' ? 'Ajuste de arqueo' : 'Normal'),
                         m.observacion || '',
                         esIngreso ? montoCSV(monto) : '',
                         !esIngreso ? montoCSV(monto) : ''

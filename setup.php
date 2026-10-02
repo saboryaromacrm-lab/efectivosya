@@ -143,7 +143,7 @@ try {
             reserva_nombre VARCHAR(100) NULL,
             reserva_accion ENUM('aporte','gasto') NULL,
             movimiento_padre_id INT NULL,
-            origen ENUM('normal','caja') DEFAULT 'normal',
+            origen ENUM('normal','caja','ajuste') DEFAULT 'normal',
             monto DECIMAL(15,2) NOT NULL,
             observacion VARCHAR(255) NULL,
             saldo DECIMAL(15,2) NOT NULL DEFAULT 0,
@@ -218,6 +218,31 @@ try {
     } catch (PDOException $e) {
         // La columna ya existe
     }
+
+    // Arqueos de caja: valor 'ajuste' en origen + tabla con el detalle de cada
+    // arqueo. api.php también lo crea solo la primera vez que se usa.
+    try {
+        $conn->exec("ALTER TABLE movimientos MODIFY origen ENUM('normal','caja','ajuste') DEFAULT 'normal'");
+    } catch (PDOException $e) {
+        // Ya estaba
+    }
+
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS arqueos (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            fecha DATE NOT NULL,
+            saldo_sistema DECIMAL(15,2) NOT NULL,
+            total_contado DECIMAL(15,2) NOT NULL,
+            diferencia DECIMAL(15,2) NOT NULL,
+            detalle TEXT NULL,
+            otros DECIMAL(15,2) NOT NULL DEFAULT 0,
+            observacion VARCHAR(255) NULL,
+            movimiento_id INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_fecha (fecha),
+            INDEX idx_movimiento (movimiento_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
 
     try {
         $conn->exec("CREATE INDEX idx_padre ON movimientos (movimiento_padre_id)");

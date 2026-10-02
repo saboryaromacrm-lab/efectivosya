@@ -86,7 +86,18 @@ Campos comunes:
 
 **📝 Anotaciones / Recordatorios** — notas libres que quedan visibles en la pantalla principal.
 
-**Encabezado fijo:** Saldo Actual y fecha del Último Ingreso.
+**Encabezado fijo:** Saldo Actual, fecha del Último Ingreso y botón **🧮 Arqueo**.
+
+### 🧮 Arqueo de caja (botón del encabezado)
+Control y ajuste de la caja en un solo paso:
+1. Se carga **cuántos billetes** hay de cada valor ($20.000 a $10) y, aparte, monedas u otros montos. El total se suma solo.
+2. Se compara con el **saldo del sistema**, leído del servidor en el momento, y se muestra la diferencia: **✓ cuadra**, **sobrante** o **faltante**.
+3. **Registrar control**, si cuadra: queda asentado el arqueo y no se crea ningún movimiento.
+4. **Ajustar**, si no cuadra: se pide una **observación obligatoria** y una confirmación. Se registra un movimiento de ajuste con fecha de hoy: un sobrante entra como ingreso y un faltante como egreso. La caja queda igual a lo contado.
+
+Cada arqueo, con o sin ajuste, queda en un historial con el detalle de billetes ("Últimos arqueos", dentro del mismo modal). Si mientras se contaba alguien cargó otro movimiento, el servidor rechaza el ajuste, muestra el saldo nuevo y recalcula la diferencia, para no ajustar contra un saldo viejo.
+
+Los ajustes llevan la marca **⚖️ Ajuste** en las tablas, no se pueden editar (se eliminan y se rehace el arqueo) y no cuentan como "Último Ingreso".
 
 ### 📈 Ingresos
 - **Filtros:** mes, rango de fecha del movimiento, sucursal, rango de **fecha de asentamiento** y **orden** (fecha mov. ↑↓ o asentamiento ↑↓).
@@ -137,6 +148,7 @@ El saldo es un acumulado **cronológico por fecha del movimiento** (orden `fecha
 | Ingreso | **suma** |
 | Egreso normal | **resta** |
 | Retiro de caja (egreso con `origen = caja`) | **resta** |
+| Ajuste de arqueo (`origen = ajuste`) | sobrante **suma**, faltante **resta** |
 | Aporte a reserva (`reserva_accion = aporte`) | **resta** (la plata sale de la caja hacia la reserva) |
 | Gasto desde reserva (`reserva_accion = gasto`) | **no toca la caja** (sale de la reserva) |
 
@@ -183,6 +195,7 @@ Saldo de una reserva = suma de aportes − suma de gastos.
 | `ULTIMOS_POR_PAGINA` | Filas por bloque en Últimos Movimientos (10) |
 | `ITEMS_POR_PAGINA` | Filas por página en Ingresos y Egresos (50) |
 | `SB_MIN_OPCIONES_BUSCADOR` | Desde cuántas opciones aparece el buscador (8) |
+| `BILLETES_ARS` | Billetes que aparecen en el arqueo de caja |
 
 ### `sw.js`
 `CACHE_NAME` (`caja-sya-vN`): hay que subirle el número en cada cambio de `index.html`, para que los celulares descarten la copia vieja.
@@ -193,7 +206,7 @@ Saldo de una reserva = suma de aportes − suma de gastos.
 
 | Tabla | Contenido |
 |---|---|
-| `movimientos` | Ingresos y egresos: `fecha`, `tipo`, `monto`, `saldo` (acumulado), sucursal, concepto, colaborador, proveedor, reserva (`reserva_id`, `reserva_accion`), `origen` (`normal`/`caja`), `movimiento_padre_id`, `observacion`, `created_at` |
+| `movimientos` | Ingresos y egresos: `fecha`, `tipo`, `monto`, `saldo` (acumulado), sucursal, concepto, colaborador, proveedor, reserva (`reserva_id`, `reserva_accion`), `origen` (`normal`/`caja`/`ajuste`), `movimiento_padre_id`, `observacion`, `created_at` |
 | `sucursales` | `nombre`, `rinde_caja`, `activo` |
 | `conceptos` | `nombre`, `requiere_colaborador`, `requiere_sucursal`, `es_reserva`, `activo` |
 | `colaboradores` | `nombre`, `activo` |
@@ -203,6 +216,7 @@ Saldo de una reserva = suma de aportes − suma de gastos.
 | `recordatorios_descartados` | Recordatorios descartados por año y mes |
 | `dias_cerrados` | `sucursal_id`, `fecha`, `motivo` (único por sucursal y fecha) |
 | `anotaciones` | `titulo`, `mensaje`, `activo`, `created_at` |
+| `arqueos` | `fecha`, `saldo_sistema`, `total_contado`, `diferencia`, `detalle` (billetes en JSON), `otros`, `observacion`, `movimiento_id` (el ajuste, si hubo) |
 
 Los nombres de sucursal, concepto, colaborador, proveedor y reserva se guardan también **desnormalizados** en `movimientos`, para conservar el histórico aunque el registro se dé de baja.
 
@@ -238,6 +252,7 @@ Todas las llamadas son `api.php?action=<acción>` y responden JSON.
 | `rendiciones-faltantes` | GET | Rendiciones pendientes (`diasAtras`, 30 por defecto) |
 | `reporte-ingresos` / `reporte-egresos` | GET | Totales y datos para gráficos, con los mismos filtros del listado |
 | `reporte-general` | GET | Reporte completo con comparación contra el período anterior |
+| `ajuste-caja` | GET, POST | GET: últimos arqueos. POST: registra un arqueo (`totalContado`, `saldoEsperado`, `observacion`, `detalle`, `otros`) y, si hay diferencia, el ajuste. Responde 409 si el saldo cambió |
 | `exportar` | GET | Copia completa de movimientos y catálogos en JSON |
 | `recalcular` | GET | Recalcula el saldo de todos los movimientos |
 

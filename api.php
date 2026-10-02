@@ -60,7 +60,7 @@ try {
             $saldo = $row ? floatval($row['saldo']) : 0;
 
             // Obtener fecha último ingreso (por fecha, no por ID de inserción)
-            $stmt = $conn->query("SELECT fecha FROM movimientos WHERE tipo = 'ingreso' ORDER BY fecha DESC LIMIT 1");
+            $stmt = $conn->query("SELECT fecha FROM movimientos WHERE tipo = 'ingreso' AND (origen IS NULL OR origen <> 'ajuste') ORDER BY fecha DESC LIMIT 1");
             $row = $stmt->fetch();
             $ultimoIngreso = $row ? $row['fecha'] : null;
 
@@ -553,6 +553,12 @@ try {
                     jsonResponse(['error' => 'Los egresos directos de caja no se pueden editar. Elimine el ingreso padre para borrarlos.'], 400);
                 }
 
+                // Los ajustes de arqueo tampoco: su monto sale de comparar lo contado
+                // contra el saldo de ese momento, editarlo rompería esa relación.
+                if (isset($movActual['origen']) && $movActual['origen'] === 'ajuste') {
+                    jsonResponse(['error' => 'Los ajustes de arqueo no se pueden editar. Eliminalo y hacé un arqueo nuevo.'], 400);
+                }
+
                 // BLOQUEO: si el movimiento está vinculado a una reserva INACTIVA, no permitir editar
                 // (Editar movimientos de reservas eliminadas puede romper la matemática global)
                 if (!empty($movActual['reserva_id'])) {
@@ -970,6 +976,143 @@ try {
             jsonResponse($ultimos);
             break;
 
+        // ==================== ARQUEO / AJUSTE DE CAJA ====================
+        // El usuario cuenta los billetes que tiene físicamente. Si el total no
+        // coincide con el saldo del sistema, se registra un movimiento de ajuste
+        // (sobrante = ingreso, faltante = egreso) con origen 'ajuste' y una
+        // observación obligatoria. Si coincide, sólo queda asentado el control.
+        // Cada arqueo, con o sin ajuste, queda en la tabla `arqueos` con el
+        // detalle de billetes, para poder auditarlo después.
+        case 'ajuste-caja':
+            if ($method === 'GET') {
+                asegurarEsquemaAjustes($conn);
+                $limit = isset($_GET['limit']) ? max(1, min(intval($_GET['limit']), 200)) : 20;
+                $stmt = $conn->prepare("SELECT * FROM arqueos ORDER BY id DESC LIMIT :limit");
+                $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+                $stmt->execute();
+                $arqueos = $stmt->fetchAll();
+                foreach ($arqueos as &$a) {
+                    $a['detalle'] = json_decode($a['detalle'] ?? '[]', true) ?: [];
+                }
+                unset($a);
+                jsonResponse($arqueos);
+            }
+
+            if ($method !== 'POST') {
+                jsonResponse(['error' => 'Método no permitido'], 405);
+            }
+
+            $data = json_decode(file_get_contents('php://input'), true) ?: [];
+
+            if (!isset($data['totalContado']) || !is_numeric($data['totalContado'])) {
+                jsonResponse(['error' => 'Falta el total contado'], 400);
+            }
+            if (!isset($data['saldoEsperado']) || !is_numeric($data['saldoEsperado'])) {
+                jsonResponse(['error' => 'Falta el saldo contra el que se contó'], 400);
+            }
+            $totalCent = (int) round(floatval($data['totalContado']) * 100);
+            if ($totalCent < 0) {
+                jsonResponse(['error' => 'El total contado no puede ser negativo'], 400);
+            }
+            $observacion = isset($data['observacion']) ? trim(mb_substr($data['observacion'], 0, 255)) : '';
+
+            // Detalle de billetes: sólo números válidos, como lista {denominacion, cantidad}
+            $detalle = [];
+            if (!empty($data['detalle']) && is_array($data['detalle'])) {
+                foreach ($data['detalle'] as $d) {
+                    $den = isset($d['denominacion']) ? floatval($d['denominacion']) : 0;
+                    $cant = isset($d['cantidad']) ? intval($d['cantidad']) : 0;
+                    if ($den > 0 && $cant > 0) {
+                        $detalle[] = ['denominacion' => $den, 'cantidad' => $cant];
+                    }
+                }
+            }
+            $otros = isset($data['otros']) ? round(floatval($data['otros']), 2) : 0;
+
+            // La tabla y el valor 'ajuste' del ENUM se crean solos la primera vez.
+            // Va ANTES de cualquier transacción: un ALTER hace commit implícito.
+            asegurarEsquemaAjustes($conn);
+
+            // Saldo del sistema AHORA (misma fuente que el encabezado)
+            $row = $conn->query("SELECT saldo FROM movimientos ORDER BY fecha DESC, id DESC LIMIT 1")->fetch();
+            $saldoCent = $row ? (int) round(floatval($row['saldo']) * 100) : 0;
+            $esperadoCent = (int) round(floatval($data['saldoEsperado']) * 100);
+
+            // Si el saldo cambió mientras el usuario contaba (alguien cargó un
+            // movimiento), la diferencia que vio en pantalla ya no es la real:
+            // se rechaza para que la vuelva a mirar antes de ajustar.
+            if ($saldoCent !== $esperadoCent) {
+                jsonResponse([
+                    'error' => 'El saldo de la caja cambió mientras contabas (ahora es $' .
+                               number_format($saldoCent / 100, 2, ',', '.') . '). Revisá la diferencia y volvé a confirmar.',
+                    'saldoActual' => $saldoCent / 100
+                ], 409);
+            }
+
+            $difCent = $totalCent - $saldoCent;
+            if ($difCent !== 0 && $observacion === '') {
+                jsonResponse(['error' => 'La observación es obligatoria para registrar un ajuste'], 400);
+            }
+
+            $hoy = date('Y-m-d');
+            $movId = null;
+
+            try {
+                $conn->beginTransaction();
+
+                if ($difCent !== 0) {
+                    $esSobrante = $difCent > 0;
+                    $stmt = $conn->prepare("
+                        INSERT INTO movimientos (fecha, tipo, concepto_id, concepto_nombre, monto, observacion, saldo, origen)
+                        VALUES (:fecha, :tipo, NULL, :concepto, :monto, :obs, 0, 'ajuste')
+                    ");
+                    $stmt->execute([
+                        ':fecha' => $hoy,
+                        ':tipo' => $esSobrante ? 'ingreso' : 'egreso',
+                        ':concepto' => $esSobrante ? 'Ajuste de caja (sobrante)' : 'Ajuste de caja (faltante)',
+                        ':monto' => abs($difCent) / 100,
+                        ':obs' => $observacion,
+                    ]);
+                    $movId = $conn->lastInsertId();
+                }
+
+                $stmt = $conn->prepare("
+                    INSERT INTO arqueos (fecha, saldo_sistema, total_contado, diferencia, detalle, otros, observacion, movimiento_id)
+                    VALUES (:fecha, :sistema, :contado, :dif, :detalle, :otros, :obs, :mov)
+                ");
+                $stmt->execute([
+                    ':fecha' => $hoy,
+                    ':sistema' => $saldoCent / 100,
+                    ':contado' => $totalCent / 100,
+                    ':dif' => $difCent / 100,
+                    ':detalle' => json_encode($detalle),
+                    ':otros' => $otros,
+                    ':obs' => $observacion !== '' ? $observacion : null,
+                    ':mov' => $movId,
+                ]);
+
+                $conn->commit();
+            } catch (Exception $e) {
+                if ($conn->inTransaction()) {
+                    $conn->rollBack();
+                }
+                throw $e;
+            }
+
+            if ($movId) {
+                recalcularSaldos($conn, $hoy);
+            }
+
+            $row = $conn->query("SELECT saldo FROM movimientos ORDER BY fecha DESC, id DESC LIMIT 1")->fetch();
+            jsonResponse([
+                'success' => true,
+                'ajustado' => $movId !== null,
+                'diferencia' => $difCent / 100,
+                'movimientoId' => $movId,
+                'saldo' => $row ? floatval($row['saldo']) : 0,
+            ]);
+            break;
+
         // ==================== SALDO (liviano, para el header) ====================
         // Endpoint mínimo: evita pedir `init` completo (7 queries) sólo para leer el saldo.
         case 'saldo':
@@ -977,7 +1120,7 @@ try {
             $row = $stmt->fetch();
             $saldo = $row ? floatval($row['saldo']) : 0;
 
-            $stmt = $conn->query("SELECT fecha FROM movimientos WHERE tipo = 'ingreso' ORDER BY fecha DESC LIMIT 1");
+            $stmt = $conn->query("SELECT fecha FROM movimientos WHERE tipo = 'ingreso' AND (origen IS NULL OR origen <> 'ajuste') ORDER BY fecha DESC LIMIT 1");
             $row = $stmt->fetch();
             $ultimoIngreso = $row ? $row['fecha'] : null;
 
@@ -2340,6 +2483,43 @@ function aplicarFiltroAsentamiento(&$where, &$params)
         $where .= " AND created_at < :asentHasta";
         $params[':asentHasta'] = date('Y-m-d 00:00:00', strtotime($_GET['asentHasta'] . ' +1 day'));
     }
+}
+
+/**
+ * Deja la base lista para los arqueos: agrega 'ajuste' al ENUM de
+ * movimientos.origen y crea la tabla `arqueos` si no existen.
+ * Se llama desde el endpoint, así funciona aunque no se haya vuelto a correr
+ * setup.php. Es idempotente y barato: sólo altera la tabla si hace falta.
+ * NO llamar dentro de una transacción: los ALTER/CREATE hacen commit implícito.
+ */
+function asegurarEsquemaAjustes($conn)
+{
+    static $listo = false;
+    if ($listo) return;
+
+    $col = $conn->query("SHOW COLUMNS FROM movimientos LIKE 'origen'")->fetch();
+    if ($col && strpos($col['Type'], "'ajuste'") === false) {
+        $conn->exec("ALTER TABLE movimientos MODIFY origen ENUM('normal','caja','ajuste') DEFAULT 'normal'");
+    }
+
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS arqueos (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            fecha DATE NOT NULL,
+            saldo_sistema DECIMAL(15,2) NOT NULL,
+            total_contado DECIMAL(15,2) NOT NULL,
+            diferencia DECIMAL(15,2) NOT NULL,
+            detalle TEXT NULL,
+            otros DECIMAL(15,2) NOT NULL DEFAULT 0,
+            observacion VARCHAR(255) NULL,
+            movimiento_id INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_fecha (fecha),
+            INDEX idx_movimiento (movimiento_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+
+    $listo = true;
 }
 
 /**
